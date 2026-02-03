@@ -20,6 +20,7 @@ router.get("/beneficiaries/filter", async (req, res) => {
         sex,
         dob,
         nat_id,
+        hh_size,
         hh_code,
         regionID,
         districtID,
@@ -56,7 +57,7 @@ router.get("/beneficiaries/filter", async (req, res) => {
 router.patch("/beneficiaries/:sppCode", async (req, res) => {
   try {
     const { sppCode } = req.params;
-    const { sex, dob, nat_id, groupname, selected } = req.body;
+    const { sex, dob, nat_id, hh_size, groupname, selected } = req.body;
 
     const [result] = await db.query(
       `
@@ -65,12 +66,13 @@ router.patch("/beneficiaries/:sppCode", async (req, res) => {
         sex = COALESCE(?, sex),
         dob = COALESCE(?, dob),
         nat_id = COALESCE(?, nat_id),
+        hh_size = COALESCE(?, hh_size),
         groupname = COALESCE(?, groupname),
         selected = COALESCE(?, selected),
         updated_at = NOW()
       WHERE sppCode = ?
       `,
-      [sex, dob, nat_id, groupname, selected, sppCode],
+      [sex, dob, nat_id, hh_size, groupname, selected, sppCode],
     );
 
     if (result.affectedRows === 0) {
@@ -111,12 +113,13 @@ router.post("/beneficiaries/bulk-sync", async (req, res) => {
           sex = COALESCE(?, sex),
           dob = COALESCE(?, dob),
           nat_id = COALESCE(?, nat_id),
+          hh_size = COALESCE(?, hh_size),
           groupname = COALESCE(?, groupname),
           selected = COALESCE(?, selected),
           updated_at = NOW()
         WHERE sppCode = ?
         `,
-        [b.sex, b.dob, b.nat_id, b.groupname, b.selected, b.sppCode],
+        [b.sex, b.hh_size, b.dob, b.nat_id, b.groupname, b.selected, b.sppCode],
       );
     }
 
