@@ -65,6 +65,7 @@ router.get("/beneficiaries/verified", async (req, res) => {
   try {
     const sql = `
       SELECT
+        sppCode,
         groupname,
         hh_head_name,
         hh_code,
