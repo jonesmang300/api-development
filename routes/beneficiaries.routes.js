@@ -52,6 +52,52 @@ router.get("/beneficiaries/filter", async (req, res) => {
 });
 
 /* ===============================
+   GET SINGLE BENEFICIARY BY sppCode
+   =============================== */
+router.get("/beneficiaries/:sppCode", async (req, res) => {
+  const { sppCode } = req.params;
+
+  if (!sppCode) {
+    return res.status(400).json({ message: "sppCode is required" });
+  }
+
+  try {
+    const sql = `
+      SELECT
+        sppCode,
+        hh_head_name,
+        sex,
+        dob,
+        nat_id,
+        hh_size,
+        hh_code,
+        regionID,
+        districtID,
+        taID,
+        villageClusterID,
+        groupname,
+        selected,
+        created_at,
+        updated_at
+      FROM tblsctretargeting_beneficiaries
+      WHERE sppCode = ?
+      LIMIT 1
+    `;
+
+    const [rows] = await db.query(sql, [sppCode]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "Beneficiary not found" });
+    }
+
+    res.json(rows[0]);
+  } catch (error) {
+    console.error("Get beneficiary error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ===============================
    UPDATE SINGLE BENEFICIARY
    =============================== */
 router.patch("/beneficiaries/:sppCode", async (req, res) => {
@@ -132,7 +178,7 @@ router.get("/beneficiaries/verified", async (req, res) => {
         hh_code,
         villageClusterID
       FROM tblsctretargeting_beneficiaries
-      WHERE selected = 1
+      WHERE selected = '1'
         AND villageClusterID = ?
       ORDER BY groupname, hh_head_name
     `;
