@@ -92,6 +92,28 @@ router.patch("/beneficiaries/:sppCode", async (req, res) => {
 });
 
 /* ===============================
+   COUNT ALL VERIFIED BENEFICIARIES
+   =============================== */
+router.get("/beneficiaries/count/selected", async (req, res) => {
+  try {
+    const sql = `
+      SELECT COUNT(sppCode) AS total
+      FROM tblsctretargeting_beneficiaries
+      WHERE selected = 1
+    `;
+
+    const [rows] = await db.query(sql);
+
+    res.json({
+      total: rows[0].total,
+    });
+  } catch (error) {
+    console.error("Count error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ===============================
    BULK SYNC (OFFLINE → ONLINE)
    =============================== */
 router.post("/beneficiaries/bulk-sync", async (req, res) => {
