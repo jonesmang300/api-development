@@ -52,6 +52,37 @@ router.get("/beneficiaries/filter", async (req, res) => {
 });
 
 /* ===============================
+   LIST VERIFIED BENEFICIARIES
+   FILTERED BY VILLAGE CLUSTER
+   =============================== */
+router.get("/beneficiaries/verified", async (req, res) => {
+  const { villageClusterID } = req.query;
+
+  if (!villageClusterID) {
+    return res.status(400).json({ message: "villageClusterID is required" });
+  }
+
+  try {
+    const sql = `
+      SELECT
+        groupname,
+        hh_head_name,
+        hh_code,
+        villageClusterID
+      FROM tblsctretargeting_beneficiaries
+      WHERE selected = '1' AND villageClusterID = ?
+      ORDER BY groupname, hh_head_name
+    `;
+
+    const [rows] = await db.query(sql, [villageClusterID]);
+    res.json(rows);
+  } catch (error) {
+    console.error("Verified list error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ===============================
    GET SINGLE BENEFICIARY BY sppCode
    =============================== */
 router.get("/beneficiaries/:sppCode", async (req, res) => {
@@ -145,7 +176,7 @@ router.get("/beneficiaries/count/selected", async (req, res) => {
     const sql = `
       SELECT COUNT(sppCode) AS total
       FROM tblsctretargeting_beneficiaries
-      WHERE selected = 1
+      WHERE selected = '1'
     `;
 
     const [rows] = await db.query(sql);
@@ -155,38 +186,6 @@ router.get("/beneficiaries/count/selected", async (req, res) => {
     });
   } catch (error) {
     console.error("Count error:", error);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-/* ===============================
-   LIST VERIFIED BENEFICIARIES
-   FILTERED BY VILLAGE CLUSTER
-   =============================== */
-router.get("/beneficiaries/verified", async (req, res) => {
-  const { villageClusterID } = req.query;
-
-  if (!villageClusterID) {
-    return res.status(400).json({ message: "villageClusterID is required" });
-  }
-
-  try {
-    const sql = `
-      SELECT
-        groupname,
-        hh_head_name,
-        hh_code,
-        villageClusterID
-      FROM tblsctretargeting_beneficiaries
-      WHERE selected = 0
-        AND villageClusterID = ?
-      ORDER BY groupname, hh_head_name
-    `;
-
-    const [rows] = await db.query(sql, [villageClusterID]);
-    res.json(rows);
-  } catch (error) {
-    console.error("Verified list error:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
