@@ -114,6 +114,38 @@ router.get("/beneficiaries/count/selected", async (req, res) => {
 });
 
 /* ===============================
+   LIST VERIFIED BENEFICIARIES
+   FILTERED BY VILLAGE CLUSTER
+   =============================== */
+router.get("/beneficiaries/verified", async (req, res) => {
+  const { villageClusterID } = req.query;
+
+  if (!villageClusterID) {
+    return res.status(400).json({ message: "villageClusterID is required" });
+  }
+
+  try {
+    const sql = `
+      SELECT
+        groupname,
+        hh_head_name,
+        hh_code,
+        villageClusterID
+      FROM tblsctretargeting_beneficiaries
+      WHERE selected = 1
+        AND villageClusterID = ?
+      ORDER BY groupname, hh_head_name
+    `;
+
+    const [rows] = await db.query(sql, [villageClusterID]);
+    res.json(rows);
+  } catch (error) {
+    console.error("Verified list error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ===============================
    BULK SYNC (OFFLINE → ONLINE)
    =============================== */
 router.post("/beneficiaries/bulk-sync", async (req, res) => {
