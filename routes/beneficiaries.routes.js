@@ -178,7 +178,7 @@ router.get("/beneficiaries/verified", async (req, res) => {
         hh_code,
         villageClusterID
       FROM tblsctretargeting_beneficiaries
-      WHERE selected = '1'
+      WHERE selected = 0
         AND villageClusterID = ?
       ORDER BY groupname, hh_head_name
     `;
