@@ -31,7 +31,7 @@ router.get("/beneficiaries/filter", async (req, res) => {
         created_at,
         updated_at
       FROM tblsctretargeting_beneficiaries
-      WHERE villageClusterID = ?
+      WHERE villageClusterID = ? AND AND (selected IS NULL OR selected = '' OR selected = '0')
     `;
     const params = [villageClusterID];
 
