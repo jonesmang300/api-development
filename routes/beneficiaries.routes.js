@@ -202,6 +202,7 @@ router.post("/beneficiaries/bulk-sync", async (req, res) => {
   }
 
   const conn = await db.getConnection();
+
   try {
     await conn.beginTransaction();
 
@@ -219,7 +220,7 @@ router.post("/beneficiaries/bulk-sync", async (req, res) => {
           updated_at = NOW()
         WHERE sppCode = ?
         `,
-        [b.sex, b.hh_size, b.dob, b.nat_id, b.groupname, b.selected, b.sppCode],
+        [b.sex, b.dob, b.nat_id, b.hh_size, b.groupname, b.selected, b.sppCode],
       );
     }
 
