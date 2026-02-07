@@ -207,6 +207,8 @@ router.post("/beneficiaries/bulk-sync", async (req, res) => {
     await conn.beginTransaction();
 
     for (const b of updates) {
+      const deviceId = b.deviceId || null;
+
       await conn.query(
         `
         UPDATE tblsctretargeting_beneficiaries
@@ -217,10 +219,39 @@ router.post("/beneficiaries/bulk-sync", async (req, res) => {
           hh_size = COALESCE(?, hh_size),
           groupname = COALESCE(?, groupname),
           selected = COALESCE(?, selected),
+
+          -- ✅ only set verified_device_id when selected=1
+          verified_device_id = CASE
+            WHEN COALESCE(?, selected) = 1 THEN ?
+            ELSE verified_device_id
+          END,
+
+          -- ✅ only set verified_at when selected=1
+          verified_at = CASE
+            WHEN COALESCE(?, selected) = 1 THEN NOW()
+            ELSE verified_at
+          END,
+
           updated_at = NOW()
         WHERE sppCode = ?
         `,
-        [b.sex, b.dob, b.nat_id, b.hh_size, b.groupname, b.selected, b.sppCode],
+        [
+          b.sex,
+          b.dob,
+          b.nat_id,
+          b.hh_size,
+          b.groupname,
+          b.selected,
+
+          // CASE check (selected)
+          b.selected,
+          deviceId,
+
+          // CASE check (selected)
+          b.selected,
+
+          b.sppCode,
+        ],
       );
     }
 
