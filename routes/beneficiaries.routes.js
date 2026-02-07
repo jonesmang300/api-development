@@ -207,8 +207,6 @@ router.post("/beneficiaries/bulk-sync", async (req, res) => {
     await conn.beginTransaction();
 
     for (const b of updates) {
-      const deviceId = b.deviceId || null;
-
       await conn.query(
         `
         UPDATE tblsctretargeting_beneficiaries
@@ -218,19 +216,13 @@ router.post("/beneficiaries/bulk-sync", async (req, res) => {
           nat_id = COALESCE(?, nat_id),
           hh_size = COALESCE(?, hh_size),
           groupname = COALESCE(?, groupname),
-          selected = COALESCE(?, selected),
 
-          -- ✅ only set verified_device_id when selected=1
-          verified_device_id = CASE
-            WHEN COALESCE(?, selected) = 1 THEN ?
-            ELSE verified_device_id
+          selected = CASE
+            WHEN ? IS NOT NULL THEN ?
+            ELSE selected
           END,
 
-          -- ✅ only set verified_at when selected=1
-          verified_at = CASE
-            WHEN COALESCE(?, selected) = 1 THEN NOW()
-            ELSE verified_at
-          END,
+          deviceId = COALESCE(?, deviceId),
 
           updated_at = NOW()
         WHERE sppCode = ?
@@ -241,15 +233,15 @@ router.post("/beneficiaries/bulk-sync", async (req, res) => {
           b.nat_id,
           b.hh_size,
           b.groupname,
+
+          // selected
+          b.selected,
           b.selected,
 
-          // CASE check (selected)
-          b.selected,
-          deviceId,
+          // deviceId
+          b.deviceId,
 
-          // CASE check (selected)
-          b.selected,
-
+          // where
           b.sppCode,
         ],
       );
@@ -265,5 +257,33 @@ router.post("/beneficiaries/bulk-sync", async (req, res) => {
     conn.release();
   }
 });
+
+router.get(
+  "/beneficiaries/count/selected/device/:deviceId",
+  async (req, res) => {
+    const { deviceId } = req.params;
+
+    if (!deviceId) {
+      return res.status(400).json({ message: "deviceId is required" });
+    }
+
+    try {
+      const [rows] = await db.query(
+        `
+      SELECT COUNT(*) AS total
+      FROM tblsctretargeting_beneficiaries
+      WHERE selected = '1'
+      AND deviceId = ?
+      `,
+        [deviceId],
+      );
+
+      res.json({ total: Number(rows?.[0]?.total || 0) });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: "Server error" });
+    }
+  },
+);
 
 module.exports = router;
