@@ -19,8 +19,6 @@ It provides endpoints for:
 ✅ Device-based verification tracking  
 ✅ Bulk sync support for group assignment  
 ✅ Simple REST API structure  
-✅ Easy deployment (Render / Railway / VPS)
-
 ---
 
 ## 🛠 Tech Stack
