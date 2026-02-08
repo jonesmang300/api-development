@@ -84,6 +84,44 @@ router.get("/beneficiaries/verified", async (req, res) => {
 });
 
 /* ===============================
+   LIST VERIFIED BENEFICIARIES
+   FILTERED BY VILLAGE CLUSTER AND DEVICEID
+   =============================== */
+router.get("/beneficiaries/verified/deviceId", async (req, res) => {
+  const { villageClusterID, deviceId } = req.query;
+
+  if (!villageClusterID) {
+    return res.status(400).json({ message: "villageClusterID is required" });
+  }
+
+  if (!deviceId) {
+    return res.status(400).json({ message: "deviceId is required" });
+  }
+
+  try {
+    const sql = `
+      SELECT
+        sppCode,
+        groupname,
+        hh_head_name,
+        hh_code,
+        villageClusterID
+      FROM tblsctretargeting_beneficiaries
+      WHERE selected = '1'
+        AND villageClusterID = ?
+        AND deviceId = ?
+      ORDER BY groupname, hh_head_name
+    `;
+
+    const [rows] = await db.query(sql, [villageClusterID, deviceId]);
+    res.json(rows);
+  } catch (error) {
+    console.error("Verified list error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ===============================
    GET SINGLE BENEFICIARY BY sppCode
    =============================== */
 router.get("/beneficiaries/:sppCode", async (req, res) => {
