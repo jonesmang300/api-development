@@ -29,7 +29,7 @@ It provides endpoints for:
 - Morgan (request logging)
 - CORS
 - dotenv (environment variables)
-- Database (MySQL / PostgreSQL / MSSQL depending on your setup)
+- Database (MySQL)
 
 ---
 
