@@ -358,6 +358,8 @@ router.get("/beneficiaries/summary/group", async (req, res) => {
 
       FROM tblsctretargeting_beneficiaries
       WHERE villageClusterID = ?
+        AND groupname IS NOT NULL
+        AND TRIM(groupname) <> ''
       GROUP BY groupname
       ORDER BY groupname ASC
     `;
@@ -367,6 +369,36 @@ router.get("/beneficiaries/summary/group", async (req, res) => {
     res.json(rows);
   } catch (error) {
     console.error("Summary error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.get("/beneficiaries/summary/verified/totals", async (req, res) => {
+  const { villageClusterID } = req.query;
+
+  if (!villageClusterID) {
+    return res.status(400).json({ message: "villageClusterID is required" });
+  }
+
+  try {
+    const sql = `
+      SELECT
+        SUM(CASE WHEN sex IN ('01', 'M', 'm') THEN 1 ELSE 0 END) AS M,
+        SUM(CASE WHEN sex IN ('02', 'F', 'f') THEN 1 ELSE 0 END) AS F,
+        (
+          SUM(CASE WHEN sex IN ('01', 'M', 'm') THEN 1 ELSE 0 END) +
+          SUM(CASE WHEN sex IN ('02', 'F', 'f') THEN 1 ELSE 0 END)
+        ) AS Total
+      FROM tblsctretargeting_beneficiaries
+      WHERE verified = '1'
+        AND villageClusterID = ?
+    `;
+
+    const [rows] = await db.query(sql, [villageClusterID]);
+
+    res.json(rows[0]);
+  } catch (error) {
+    console.error("Verified totals error:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
