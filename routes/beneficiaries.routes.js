@@ -324,4 +324,51 @@ router.get(
   },
 );
 
+/* ===============================
+   SUMMARY BY GROUPNAME (SEX COUNTS)
+   FILTERED BY VILLAGE CLUSTER
+   =============================== */
+router.get("/beneficiaries/summary/group", async (req, res) => {
+  const { villageClusterID } = req.query;
+
+  if (!villageClusterID) {
+    return res.status(400).json({ message: "villageClusterID is required" });
+  }
+
+  try {
+    const sql = `
+      SELECT
+        groupname,
+
+        SUM(
+          CASE
+            WHEN sex IN ('01', 'M', 'm') THEN 1
+            ELSE 0
+          END
+        ) AS males,
+
+        SUM(
+          CASE
+            WHEN sex IN ('02', 'F', 'f') THEN 1
+            ELSE 0
+          END
+        ) AS females,
+
+        COUNT(*) AS total
+
+      FROM tblsctretargeting_beneficiaries
+      WHERE villageClusterID = ?
+      GROUP BY groupname
+      ORDER BY groupname ASC
+    `;
+
+    const [rows] = await db.query(sql, [villageClusterID]);
+
+    res.json(rows);
+  } catch (error) {
+    console.error("Summary error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 module.exports = router;
