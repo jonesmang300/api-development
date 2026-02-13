@@ -390,7 +390,7 @@ router.get("/beneficiaries/summary/verified/totals", async (req, res) => {
           SUM(CASE WHEN sex IN ('02', 'F', 'f') THEN 1 ELSE 0 END)
         ) AS Total
       FROM tblsctretargeting_beneficiaries
-      WHERE verified = '1'
+      WHERE selected = '1'
         AND villageClusterID = ?
     `;
 
