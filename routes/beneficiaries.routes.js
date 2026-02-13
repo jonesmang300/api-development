@@ -373,6 +373,10 @@ router.get("/beneficiaries/summary/group", async (req, res) => {
   }
 });
 
+/* ===============================
+   SUMMARY BY VERIFIED MEMBERS
+   FILTERED BY VILLAGE CLUSTER
+   =============================== */
 router.get("/beneficiaries/summary/verified/totals", async (req, res) => {
   const { villageClusterID } = req.query;
 
