@@ -7,6 +7,8 @@ app.use(express.json());
 
 app.use("/api", require("./routes/master.routes"));
 app.use("/api", require("./routes/beneficiaries.routes"));
+app.use("/api", require("./routes/operations.routes"));
+app.use("/api", require("./routes/userAuth.routes"));
 
 /**
  * Health check (VERY important)

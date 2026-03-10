@@ -2,6 +2,50 @@ const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
 
+let beneficiaryGroupColumnsCache = null;
+
+const getBeneficiaryGroupColumns = async () => {
+  if (beneficiaryGroupColumnsCache) {
+    return beneficiaryGroupColumnsCache;
+  }
+
+  const [groupCodeRows] = await db.query(
+    "SHOW COLUMNS FROM tblsctretargeting_beneficiaries LIKE 'groupCode'",
+  );
+  const [groupIDRows] = await db.query(
+    "SHOW COLUMNS FROM tblsctretargeting_beneficiaries LIKE 'groupID'",
+  );
+
+  beneficiaryGroupColumnsCache = {
+    hasGroupCode: groupCodeRows.length > 0,
+    hasGroupID: groupIDRows.length > 0,
+  };
+
+  return beneficiaryGroupColumnsCache;
+};
+
+const buildGroupSelectSql = async () => {
+  const { hasGroupCode, hasGroupID } = await getBeneficiaryGroupColumns();
+
+  if (hasGroupCode && hasGroupID) {
+    return "groupCode, groupID,";
+  }
+  if (hasGroupCode && !hasGroupID) {
+    return "groupCode, groupCode AS groupID,";
+  }
+  if (!hasGroupCode && hasGroupID) {
+    return "groupID AS groupCode, groupID,";
+  }
+  return "NULL AS groupCode, NULL AS groupID,";
+};
+
+const getGroupWhereColumn = async () => {
+  const { hasGroupCode, hasGroupID } = await getBeneficiaryGroupColumns();
+  if (hasGroupCode) return "groupCode";
+  if (hasGroupID) return "groupID";
+  return null;
+};
+
 /* ===============================
    GET BENEFICIARIES BY VILLAGE
    =============================== */
@@ -13,6 +57,8 @@ router.get("/beneficiaries/filter", async (req, res) => {
   }
 
   try {
+    const groupSelectSql = await buildGroupSelectSql();
+
     let sql = `
       SELECT 
         sppCode,
@@ -27,6 +73,7 @@ router.get("/beneficiaries/filter", async (req, res) => {
         taID,
         villageClusterID,
         groupname,
+        ${groupSelectSql}
         selected,
         created_at,
         updated_at
@@ -122,6 +169,54 @@ router.get("/beneficiaries/verified/deviceId", async (req, res) => {
 });
 
 /* ===============================
+   LIST BENEFICIARIES BY GROUP CODE/ID
+   =============================== */
+router.get("/beneficiaries/group/:groupCode", async (req, res) => {
+  const { groupCode } = req.params;
+
+  if (!groupCode) {
+    return res.status(400).json({ message: "groupCode is required" });
+  }
+
+  try {
+    const whereColumn = await getGroupWhereColumn();
+    const groupSelectSql = await buildGroupSelectSql();
+
+    if (!whereColumn) {
+      return res.status(500).json({
+        message: "Neither groupCode nor groupID column exists on beneficiaries",
+      });
+    }
+
+    const sql = `
+      SELECT
+        sppCode,
+        hh_head_name,
+        sex,
+        dob,
+        nat_id,
+        hh_code,
+        regionID,
+        districtID,
+        taID,
+        villageClusterID,
+        groupname,
+        ${groupSelectSql}
+        selected
+      FROM tblsctretargeting_beneficiaries
+      WHERE \`${whereColumn}\` = ?
+      ORDER BY hh_head_name
+    `;
+
+    const [rows] = await db.query(sql, [groupCode]);
+    res.json(rows);
+  } catch (error) {
+    console.error("Group beneficiaries error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ===============================
    GET SINGLE BENEFICIARY BY sppCode
    =============================== */
 router.get("/beneficiaries/:sppCode", async (req, res) => {
@@ -132,6 +227,8 @@ router.get("/beneficiaries/:sppCode", async (req, res) => {
   }
 
   try {
+    const groupSelectSql = await buildGroupSelectSql();
+
     const sql = `
       SELECT
         sppCode,
@@ -146,6 +243,7 @@ router.get("/beneficiaries/:sppCode", async (req, res) => {
         taID,
         villageClusterID,
         groupname,
+        ${groupSelectSql}
         selected,
         created_at,
         updated_at
@@ -173,22 +271,43 @@ router.get("/beneficiaries/:sppCode", async (req, res) => {
 router.patch("/beneficiaries/:sppCode", async (req, res) => {
   try {
     const { sppCode } = req.params;
-    const { sex, dob, nat_id, hh_size, groupname, selected } = req.body;
+    const { sex, dob, nat_id, hh_size, hh_code, groupname, groupCode, groupID, selected } = req.body;
+    const groupValue = groupCode ?? groupID ?? null;
+    const { hasGroupCode, hasGroupID } = await getBeneficiaryGroupColumns();
+
+    const setParts = [
+      "sex = COALESCE(?, sex)",
+      "dob = COALESCE(?, dob)",
+      "nat_id = COALESCE(?, nat_id)",
+      "hh_size = COALESCE(?, hh_size)",
+      "hh_code = COALESCE(?, hh_code)",
+      "groupname = COALESCE(?, groupname)",
+    ];
+    const values = [sex, dob, nat_id, hh_size, hh_code, groupname];
+
+    if (hasGroupCode) {
+      setParts.push("groupCode = COALESCE(?, groupCode)");
+      values.push(groupValue);
+    }
+
+    if (hasGroupID) {
+      setParts.push("groupID = COALESCE(?, groupID)");
+      values.push(groupValue);
+    }
+
+    setParts.push("selected = COALESCE(?, selected)");
+    setParts.push("updated_at = NOW()");
+    values.push(selected);
+    values.push(sppCode);
 
     const [result] = await db.query(
       `
       UPDATE tblsctretargeting_beneficiaries
       SET
-        sex = COALESCE(?, sex),
-        dob = COALESCE(?, dob),
-        nat_id = COALESCE(?, nat_id),
-        hh_size = COALESCE(?, hh_size),
-        groupname = COALESCE(?, groupname),
-        selected = COALESCE(?, selected),
-        updated_at = NOW()
+        ${setParts.join(", ")}
       WHERE sppCode = ?
       `,
-      [sex, dob, nat_id, hh_size, groupname, selected, sppCode],
+      values,
     );
 
     if (result.affectedRows === 0) {
@@ -243,45 +362,50 @@ router.post("/beneficiaries/bulk-sync", async (req, res) => {
 
   try {
     await conn.beginTransaction();
+    const { hasGroupCode, hasGroupID } = await getBeneficiaryGroupColumns();
 
     for (const b of updates) {
+      const groupValue = b.groupCode ?? b.groupID ?? null;
+      const setParts = [
+        "sex = COALESCE(?, sex)",
+        "dob = COALESCE(?, dob)",
+        "nat_id = COALESCE(?, nat_id)",
+        "hh_size = COALESCE(?, hh_size)",
+        "groupname = COALESCE(?, groupname)",
+      ];
+      const values = [b.sex, b.dob, b.nat_id, b.hh_size, b.groupname];
+
+      if (hasGroupCode) {
+        setParts.push("groupCode = COALESCE(?, groupCode)");
+        values.push(groupValue);
+      }
+
+      if (hasGroupID) {
+        setParts.push("groupID = COALESCE(?, groupID)");
+        values.push(groupValue);
+      }
+
+      setParts.push(`
+        selected = CASE
+          WHEN ? IS NOT NULL THEN ?
+          ELSE selected
+        END
+      `);
+      values.push(b.selected, b.selected);
+
+      setParts.push("deviceId = COALESCE(?, deviceId)");
+      setParts.push("updated_at = NOW()");
+      values.push(b.deviceId);
+      values.push(b.sppCode);
+
       await conn.query(
         `
         UPDATE tblsctretargeting_beneficiaries
         SET
-          sex = COALESCE(?, sex),
-          dob = COALESCE(?, dob),
-          nat_id = COALESCE(?, nat_id),
-          hh_size = COALESCE(?, hh_size),
-          groupname = COALESCE(?, groupname),
-
-          selected = CASE
-            WHEN ? IS NOT NULL THEN ?
-            ELSE selected
-          END,
-
-          deviceId = COALESCE(?, deviceId),
-
-          updated_at = NOW()
+          ${setParts.join(", ")}
         WHERE sppCode = ?
         `,
-        [
-          b.sex,
-          b.dob,
-          b.nat_id,
-          b.hh_size,
-          b.groupname,
-
-          // selected
-          b.selected,
-          b.selected,
-
-          // deviceId
-          b.deviceId,
-
-          // where
-          b.sppCode,
-        ],
+        values,
       );
     }
 

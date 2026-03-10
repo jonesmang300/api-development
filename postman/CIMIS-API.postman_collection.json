@@ -1,0 +1,397 @@
+{
+  "info": {
+    "_postman_id": "7de5bec8-8eb2-4fda-b722-68cb20f377b7",
+    "name": "CIMIS API",
+    "description": "Automated Postman tests for master data, beneficiaries, operations, users/auth, and roles endpoints.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 or 503', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 503]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Master Data",
+      "item": [
+        {
+          "name": "GET /api/regions",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }],
+          "request": { "method": "GET", "url": "{{apiBase}}/regions" }
+        },
+        {
+          "name": "GET /api/districts?regionID",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }],
+          "request": { "method": "GET", "url": "{{apiBase}}/districts?regionID={{regionID}}" }
+        },
+        {
+          "name": "GET /api/tas?districtID",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }],
+          "request": { "method": "GET", "url": "{{apiBase}}/tas?districtID={{districtID}}" }
+        },
+        {
+          "name": "GET /api/village-clusters?taID",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }],
+          "request": { "method": "GET", "url": "{{apiBase}}/village-clusters?taID={{taID}}" }
+        }
+      ]
+    },
+    {
+      "name": "Beneficiaries",
+      "item": [
+        {
+          "name": "GET /api/beneficiaries/filter",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }],
+          "request": { "method": "GET", "url": "{{apiBase}}/beneficiaries/filter?villageClusterID={{villageClusterID}}" }
+        },
+        {
+          "name": "GET /api/beneficiaries/verified",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }],
+          "request": { "method": "GET", "url": "{{apiBase}}/beneficiaries/verified?villageClusterID={{villageClusterID}}" }
+        },
+        {
+          "name": "GET /api/beneficiaries/verified/deviceId",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }],
+          "request": { "method": "GET", "url": "{{apiBase}}/beneficiaries/verified/deviceId?villageClusterID={{villageClusterID}}&deviceId={{deviceId}}" }
+        },
+        {
+          "name": "GET /api/beneficiaries/:sppCode",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200 or 404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }],
+          "request": { "method": "GET", "url": "{{apiBase}}/beneficiaries/{{beneficiarySppCode}}" }
+        },
+        {
+          "name": "PATCH /api/beneficiaries/:sppCode",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 204/404', function(){ pm.expect(pm.response.code).to.be.oneOf([204,404]); });"] } }],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{apiBase}}/beneficiaries/{{beneficiarySppCode}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"groupname\": \"Updated Group\",\n  \"selected\": \"1\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /api/beneficiaries/count/selected",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }],
+          "request": { "method": "GET", "url": "{{apiBase}}/beneficiaries/count/selected" }
+        },
+        {
+          "name": "POST /api/beneficiaries/bulk-sync",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/500', function(){ pm.expect(pm.response.code).to.be.oneOf([200,500]); });"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{apiBase}}/beneficiaries/bulk-sync",
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  {\n    \"sppCode\": \"{{beneficiarySppCode}}\",\n    \"groupname\": \"Bulk Updated\",\n    \"selected\": \"1\",\n    \"deviceId\": \"{{deviceId}}\"\n  }\n]"
+            }
+          }
+        },
+        {
+          "name": "GET /api/beneficiaries/count/selected/device/:deviceId",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }],
+          "request": { "method": "GET", "url": "{{apiBase}}/beneficiaries/count/selected/device/{{deviceId}}" }
+        },
+        {
+          "name": "GET /api/beneficiaries/summary/group",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }],
+          "request": { "method": "GET", "url": "{{apiBase}}/beneficiaries/summary/group?villageClusterID={{villageClusterID}}" }
+        },
+        {
+          "name": "GET /api/beneficiaries/summary/verified/totals",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }],
+          "request": { "method": "GET", "url": "{{apiBase}}/beneficiaries/summary/verified/totals?villageClusterID={{villageClusterID}}" }
+        }
+      ]
+    },
+    {
+      "name": "Users and Roles",
+      "item": [
+        {
+          "name": "POST /api/users/register",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ts = Date.now();",
+                  "pm.environment.set('username', `tester_${ts}`);",
+                  "pm.environment.set('email', `tester_${ts}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201 or 409', function(){ pm.expect(pm.response.code).to.be.oneOf([201,409]); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{apiBase}}/users/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"userRole\": \"{{userRole}}\",\n  \"firstname\": \"{{firstname}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "POST /api/users/login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function(){ pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "if (body && body.token) { pm.environment.set('authToken', body.token); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{apiBase}}/users/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /api/user-roles",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }],
+          "request": { "method": "GET", "url": "{{apiBase}}/user-roles" }
+        },
+        {
+          "name": "GET /api/user-roles/:id",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }],
+          "request": { "method": "GET", "url": "{{apiBase}}/user-roles/{{roleId}}" }
+        }
+      ]
+    },
+    {
+      "name": "Operations - Groups",
+      "item": [
+        {
+          "name": "POST /api/groups",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', function(){ pm.response.to.have.status(201); });",
+                  "const body = pm.response.json();",
+                  "if (body && body.id) { pm.environment.set('groupID', String(body.id)); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{apiBase}}/groups",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"groupname\": \"Test Group\",\n  \"DateEstablished\": \"2026-01-01\",\n  \"regionID\": \"{{regionID}}\",\n  \"DistrictID\": \"{{districtID}}\",\n  \"TAID\": \"{{taID}}\",\n  \"villageClusterID\": \"{{villageClusterID}}\",\n  \"MembersM\": 5,\n  \"MembersF\": 8,\n  \"cohort\": \"01\",\n  \"projectID\": \"01\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /api/groups",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }],
+          "request": { "method": "GET", "url": "{{apiBase}}/groups" }
+        },
+        {
+          "name": "GET /api/groups/:id",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }],
+          "request": { "method": "GET", "url": "{{apiBase}}/groups/{{groupID}}" }
+        },
+        {
+          "name": "PATCH /api/groups/:id",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{apiBase}}/groups/{{groupID}}",
+            "body": { "mode": "raw", "raw": "{\n  \"groupname\": \"Updated Test Group\",\n  \"males_current\": 6,\n  \"females_current\": 9\n}" }
+          }
+        },
+        {
+          "name": "PATCH /api/groups/:id/delete",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }],
+          "request": { "method": "PATCH", "url": "{{apiBase}}/groups/{{groupID}}/delete" }
+        }
+      ]
+    },
+    {
+      "name": "Operations - Group Savings",
+      "item": [
+        {
+          "name": "POST /api/group-savings",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 201', function(){ pm.response.to.have.status(201); });", "const body = pm.response.json(); if (body && body.id) pm.environment.set('groupRecID', String(body.id));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{apiBase}}/group-savings",
+            "body": { "mode": "raw", "raw": "{\n  \"GroupID\": \"{{groupID}}\",\n  \"DistrictID\": \"{{districtID}}\",\n  \"Yr\": \"2026\",\n  \"Month\": \"03\",\n  \"Amount\": 10000,\n  \"sType\": \"02\"\n}" }
+          }
+        },
+        { "name": "GET /api/group-savings", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }], "request": { "method": "GET", "url": "{{apiBase}}/group-savings" } },
+        { "name": "GET /api/group-savings/:id", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "GET", "url": "{{apiBase}}/group-savings/{{groupRecID}}" } },
+        {
+          "name": "PATCH /api/group-savings/:id",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }],
+          "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{apiBase}}/group-savings/{{groupRecID}}", "body": { "mode": "raw", "raw": "{\n  \"Amount\": 12000,\n  \"Month\": \"04\"\n}" } }
+        },
+        { "name": "PATCH /api/group-savings/:id/delete", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "PATCH", "url": "{{apiBase}}/group-savings/{{groupRecID}}/delete" } }
+      ]
+    },
+    {
+      "name": "Operations - Member Savings",
+      "item": [
+        {
+          "name": "POST /api/member-savings",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 201', function(){ pm.response.to.have.status(201); });", "const body = pm.response.json(); if (body && body.id) pm.environment.set('memberSavingID', String(body.id));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{apiBase}}/member-savings",
+            "body": { "mode": "raw", "raw": "{\n  \"sppCode\": \"{{beneficiarySppCode}}\",\n  \"groupCode\": \"{{groupID}}\",\n  \"amount\": 1500,\n  \"date\": \"2026-03-10\",\n  \"sType\": \"00\"\n}" }
+          }
+        },
+        { "name": "GET /api/member-savings", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }], "request": { "method": "GET", "url": "{{apiBase}}/member-savings" } },
+        { "name": "GET /api/member-savings/:id", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "GET", "url": "{{apiBase}}/member-savings/{{memberSavingID}}" } },
+        { "name": "PATCH /api/member-savings/:id", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{apiBase}}/member-savings/{{memberSavingID}}", "body": { "mode": "raw", "raw": "{\n  \"amount\": 2000\n}" } } },
+        { "name": "PATCH /api/member-savings/:id/delete", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "PATCH", "url": "{{apiBase}}/member-savings/{{memberSavingID}}/delete" } }
+      ]
+    },
+    {
+      "name": "Operations - Meetings",
+      "item": [
+        {
+          "name": "POST /api/meetings",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 201', function(){ pm.response.to.have.status(201); });", "const body = pm.response.json(); if (body && body.id) pm.environment.set('meetingID', String(body.id));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{apiBase}}/meetings",
+            "body": { "mode": "raw", "raw": "{\n  \"purpose\": \"Weekly meeting\",\n  \"meetingdate\": \"2026-03-10\",\n  \"minutes\": \"Meeting minutes text\",\n  \"groupCode\": \"{{groupID}}\"\n}" }
+          }
+        },
+        { "name": "GET /api/meetings", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }], "request": { "method": "GET", "url": "{{apiBase}}/meetings" } },
+        { "name": "GET /api/meetings/:id", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "GET", "url": "{{apiBase}}/meetings/{{meetingID}}" } },
+        { "name": "PATCH /api/meetings/:id", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{apiBase}}/meetings/{{meetingID}}", "body": { "mode": "raw", "raw": "{\n  \"minutes\": \"Updated minutes\"\n}" } } },
+        { "name": "PATCH /api/meetings/:id/delete", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "PATCH", "url": "{{apiBase}}/meetings/{{meetingID}}/delete" } }
+      ]
+    },
+    {
+      "name": "Operations - Meeting Attendance",
+      "item": [
+        {
+          "name": "POST /api/meeting-attendance",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 201', function(){ pm.response.to.have.status(201); });", "const body = pm.response.json(); if (body && body.id) pm.environment.set('attendanceID', String(body.id));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{apiBase}}/meeting-attendance",
+            "body": { "mode": "raw", "raw": "{\n  \"meetID\": {{meetingID}},\n  \"groupCode\": \"{{groupID}}\",\n  \"sppCode\": \"{{beneficiarySppCode}}\"\n}" }
+          }
+        },
+        { "name": "GET /api/meeting-attendance", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }], "request": { "method": "GET", "url": "{{apiBase}}/meeting-attendance" } },
+        { "name": "GET /api/meeting-attendance/:id", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "GET", "url": "{{apiBase}}/meeting-attendance/{{attendanceID}}" } },
+        { "name": "PATCH /api/meeting-attendance/:id", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{apiBase}}/meeting-attendance/{{attendanceID}}", "body": { "mode": "raw", "raw": "{\n  \"sppCode\": \"{{beneficiarySppCode}}\"\n}" } } },
+        { "name": "PATCH /api/meeting-attendance/:id/delete", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "PATCH", "url": "{{apiBase}}/meeting-attendance/{{attendanceID}}/delete" } }
+      ]
+    },
+    {
+      "name": "Operations - Group Trainings",
+      "item": [
+        {
+          "name": "POST /api/group-trainings",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 201', function(){ pm.response.to.have.status(201); });", "const body = pm.response.json(); if (body && body.id) pm.environment.set('trainingID', String(body.id));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{apiBase}}/group-trainings",
+            "body": { "mode": "raw", "raw": "{\n  \"regionID\": \"{{regionID}}\",\n  \"districtID\": \"{{districtID}}\",\n  \"groupID\": \"{{groupID}}\",\n  \"TrainingTypeID\": \"01\",\n  \"StartDate\": \"2026-03-01\",\n  \"FinishDate\": \"2026-03-02\",\n  \"trainedBy\": \"Trainer A\",\n  \"Males\": 5,\n  \"Females\": 7\n}" }
+          }
+        },
+        { "name": "GET /api/group-trainings", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }], "request": { "method": "GET", "url": "{{apiBase}}/group-trainings" } },
+        { "name": "GET /api/group-trainings/:id", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "GET", "url": "{{apiBase}}/group-trainings/{{trainingID}}" } },
+        { "name": "PATCH /api/group-trainings/:id", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{apiBase}}/group-trainings/{{trainingID}}", "body": { "mode": "raw", "raw": "{\n  \"trainedBy\": \"Trainer B\",\n  \"Males\": 6,\n  \"Females\": 8\n}" } } },
+        { "name": "PATCH /api/group-trainings/:id/delete", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "PATCH", "url": "{{apiBase}}/group-trainings/{{trainingID}}/delete" } }
+      ]
+    },
+    {
+      "name": "Operations - Group IGAs",
+      "item": [
+        {
+          "name": "POST /api/group-igas",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 201', function(){ pm.response.to.have.status(201); });", "const body = pm.response.json(); if (body && body.id) pm.environment.set('groupIgaID', String(body.id));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{apiBase}}/group-igas",
+            "body": { "mode": "raw", "raw": "{\n  \"groupID\": \"{{groupID}}\",\n  \"districtID\": \"{{districtID}}\",\n  \"bus_category\": \"01\",\n  \"type\": 1,\n  \"no_male\": 2,\n  \"no_female\": 3,\n  \"amount_invested\": 50000,\n  \"imonth\": 3,\n  \"iyear\": \"2026\"\n}" }
+          }
+        },
+        { "name": "GET /api/group-igas", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }], "request": { "method": "GET", "url": "{{apiBase}}/group-igas" } },
+        { "name": "GET /api/group-igas/:id", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "GET", "url": "{{apiBase}}/group-igas/{{groupIgaID}}" } },
+        { "name": "PATCH /api/group-igas/:id", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{apiBase}}/group-igas/{{groupIgaID}}", "body": { "mode": "raw", "raw": "{\n  \"amount_invested\": 55000\n}" } } },
+        { "name": "PATCH /api/group-igas/:id/delete", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "PATCH", "url": "{{apiBase}}/group-igas/{{groupIgaID}}/delete" } }
+      ]
+    },
+    {
+      "name": "Operations - Member IGAs",
+      "item": [
+        {
+          "name": "POST /api/member-igas",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 201', function(){ pm.response.to.have.status(201); });", "const body = pm.response.json(); if (body && body.id) pm.environment.set('memberIgaID', String(body.id));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{apiBase}}/member-igas",
+            "body": { "mode": "raw", "raw": "{\n  \"groupID\": \"{{groupID}}\",\n  \"districtID\": \"{{districtID}}\",\n  \"sppCode\": \"{{beneficiarySppCode}}\",\n  \"bus_category\": \"01\",\n  \"type\": 1,\n  \"amount_invested\": 15000,\n  \"imonth\": 3,\n  \"iyear\": \"2026\"\n}" }
+          }
+        },
+        { "name": "GET /api/member-igas", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200', function(){ pm.response.to.have.status(200); });"] } }], "request": { "method": "GET", "url": "{{apiBase}}/member-igas" } },
+        { "name": "GET /api/member-igas/:id", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "GET", "url": "{{apiBase}}/member-igas/{{memberIgaID}}" } },
+        { "name": "PATCH /api/member-igas/:id", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{apiBase}}/member-igas/{{memberIgaID}}", "body": { "mode": "raw", "raw": "{\n  \"amount_invested\": 17000\n}" } } },
+        { "name": "PATCH /api/member-igas/:id/delete", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200/404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }], "request": { "method": "PATCH", "url": "{{apiBase}}/member-igas/{{memberIgaID}}/delete" } }
+      ]
+    }
+  ]
+}

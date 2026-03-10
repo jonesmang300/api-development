@@ -1,6 +1,36 @@
 const express = require("express");
+const crypto = require("crypto");
 const router = express.Router();
 const db = require("../config/db");
+
+function parseAuthUser(req) {
+  try {
+    const auth = req.headers.authorization || "";
+    const [scheme, token] = auth.split(" ");
+    if (scheme !== "Bearer" || !token) return null;
+
+    const [payloadPart, signaturePart] = token.split(".");
+    if (!payloadPart || !signaturePart) return null;
+
+    const secret = process.env.AUTH_TOKEN_SECRET || "cimis-mobile-secret";
+    const expectedSig = crypto
+      .createHmac("sha256", secret)
+      .update(payloadPart)
+      .digest("base64url");
+
+    if (expectedSig.length !== signaturePart.length) return null;
+    const ok = crypto.timingSafeEqual(
+      Buffer.from(expectedSig),
+      Buffer.from(signaturePart),
+    );
+    if (!ok) return null;
+
+    const payloadJson = Buffer.from(payloadPart, "base64url").toString("utf8");
+    return JSON.parse(payloadJson);
+  } catch {
+    return null;
+  }
+}
 
 /* ===============================
    GET ALL REGIONS
@@ -56,15 +86,49 @@ router.get("/tas", async (req, res) => {
   }
 
   try {
-    const [rows] = await db.query(
-      `
+    const authUser = parseAuthUser(req);
+    const roleId = Number(authUser?.userRole);
+    const userId = authUser?.id ? String(authUser.id) : "";
+
+    let sql = `
       SELECT TAID, TAName, DistrictID
       FROM tblta
       WHERE DistrictID = ?
-      ORDER BY TAName
-      `,
-      [districtID],
-    );
+    `;
+    const params = [districtID];
+
+    // role 5 sees only assigned TAIDs
+    if (roleId === 5) {
+      if (!userId) {
+        return res.json([]);
+      }
+
+      const [assignedRows] = await db.query(
+        `
+        SELECT taID
+        FROM tblsctretargeting_user_location
+        WHERE userID = ?
+          AND taID IS NOT NULL
+        `,
+        [userId],
+      );
+
+      const taIDs = assignedRows
+        .map((r) => String(r.taID || "").trim())
+        .filter((v) => v.length > 0);
+
+      if (taIDs.length === 0) {
+        return res.json([]);
+      }
+
+      const placeholders = taIDs.map(() => "?").join(", ");
+      sql += ` AND TAID IN (${placeholders})`;
+      params.push(...taIDs);
+    }
+
+    sql += " ORDER BY TAName";
+
+    const [rows] = await db.query(sql, params);
 
     res.json(rows);
   } catch (error) {
