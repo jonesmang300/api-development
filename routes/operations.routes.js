@@ -178,6 +178,16 @@ function parseAuthUser(req) {
   }
 }
 
+async function getTableColumns(tableName) {
+  const [rows] = await db.query(`SHOW COLUMNS FROM \`${tableName}\``);
+  return rows.map((row) => String(row.Field || ""));
+}
+
+async function getPreferredIdField(tableName, fallbacks) {
+  const columns = await getTableColumns(tableName);
+  return fallbacks.find((field) => columns.includes(field)) || fallbacks[0];
+}
+
 router.get("/groups", async (req, res) => {
   try {
     const authUser = parseAuthUser(req);
@@ -354,6 +364,84 @@ registerCrudRoutes({
   label: "group training",
 });
 
+router.get("/member-trainings", async (req, res) => {
+  const table = "tblsctretargeting_member_training";
+
+  try {
+    let sql = `
+      SELECT RecordID, groupID, sppCode, TrainingID, attendance, deleted
+      FROM \`${table}\`
+    `;
+    const whereParts = [];
+    const params = [];
+
+    whereParts.push("deleted = '0'");
+
+    if (req.query.trainingID) {
+      whereParts.push("TrainingID = ?");
+      params.push(req.query.trainingID);
+    }
+
+    if (req.query.groupID) {
+      whereParts.push("groupID = ?");
+      params.push(req.query.groupID);
+    }
+
+    if (req.query.sppCode) {
+      whereParts.push("sppCode = ?");
+      params.push(req.query.sppCode);
+    }
+
+    if (whereParts.length > 0) {
+      sql += ` WHERE ${whereParts.join(" AND ")}`;
+    }
+
+    sql += " ORDER BY `RecordID` DESC";
+
+    const [rows] = await db.query(sql, params);
+    res.json(rows);
+  } catch (error) {
+    console.error("Get member trainings error:", error);
+    res.status(500).json({ message: "Failed to load member trainings" });
+  }
+});
+
+router.post("/member-trainings", async (req, res) => {
+  const table = "tblsctretargeting_member_training";
+
+  try {
+    const { groupID, sppCode, TrainingID, attendance } = req.body;
+
+    if (!TrainingID) {
+      return res.status(400).json({ message: "TrainingID is required" });
+    }
+
+    if (!sppCode) {
+      return res.status(400).json({ message: "sppCode is required" });
+    }
+
+    const sql = `
+      INSERT INTO \`${table}\` (\`groupID\`, \`sppCode\`, \`TrainingID\`, \`attendance\`)
+      VALUES (?, ?, ?, ?)
+    `;
+
+    const [result] = await db.query(sql, [
+      groupID || null,
+      sppCode,
+      TrainingID,
+      attendance ?? "1",
+    ]);
+
+    res.status(201).json({
+      message: "member training created successfully",
+      id: result.insertId || null,
+    });
+  } catch (error) {
+    console.error("Create member training error:", error);
+    res.status(500).json({ message: "Failed to create member training" });
+  }
+});
+
 registerCrudRoutes({
   basePath: "/group-igas",
   table: "tblsctretargeting_group_iga",
@@ -387,6 +475,166 @@ registerCrudRoutes({
     "iyear",
   ],
   label: "member IGA",
+});
+
+router.get("/training-types", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT trainingTypeID, training_name, description
+      FROM tbltraining_types
+      ORDER BY training_name, trainingTypeID
+      `,
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error("Get training types error:", error);
+    res.status(500).json({ message: "Failed to load training types" });
+  }
+});
+
+router.get("/training-types/:id", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT trainingTypeID, training_name, description
+      FROM tbltraining_types
+      WHERE trainingTypeID = ?
+      LIMIT 1
+      `,
+      [req.params.id],
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "Training type not found" });
+    }
+
+    res.json(rows[0]);
+  } catch (error) {
+    console.error("Get training type by id error:", error);
+    res.status(500).json({ message: "Failed to load training type" });
+  }
+});
+
+router.get("/training-facilitators", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT facilitatorID, title
+      FROM tblfacilitator
+      ORDER BY title, facilitatorID
+      `,
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error("Get training facilitators error:", error);
+    res.status(500).json({ message: "Failed to load training facilitators" });
+  }
+});
+
+router.get("/training-facilitators/:id", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT facilitatorID, title
+      FROM tblfacilitator
+      WHERE facilitatorID = ?
+      LIMIT 1
+      `,
+      [req.params.id],
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "Training facilitator not found" });
+    }
+
+    res.json(rows[0]);
+  } catch (error) {
+    console.error("Get training facilitator by id error:", error);
+    res.status(500).json({ message: "Failed to load training facilitator" });
+  }
+});
+
+router.get("/business-categories", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT categoryID, catname
+      FROM tblbusines_category
+      ORDER BY catname, categoryID
+      `,
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error("Get business categories error:", error);
+    res.status(500).json({ message: "Failed to load business categories" });
+  }
+});
+
+router.get("/business-categories/:id", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT categoryID, catname
+      FROM tblbusines_category
+      WHERE categoryID = ?
+      LIMIT 1
+      `,
+      [req.params.id],
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "Business category not found" });
+    }
+
+    res.json(rows[0]);
+  } catch (error) {
+    console.error("Get business category by id error:", error);
+    res.status(500).json({ message: "Failed to load business category" });
+  }
+});
+
+router.get("/iga-types", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT ID, categoryID, name, description
+      FROM tbliga_types
+      ORDER BY name, ID
+      `,
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error("Get IGA types error:", error);
+    res.status(500).json({ message: "Failed to load IGA types" });
+  }
+});
+
+router.get("/iga-types/:id", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT ID, categoryID, name, description
+      FROM tbliga_types
+      WHERE ID = ?
+      LIMIT 1
+      `,
+      [req.params.id],
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "IGA type not found" });
+    }
+
+    res.json(rows[0]);
+  } catch (error) {
+    console.error("Get IGA type by id error:", error);
+    res.status(500).json({ message: "Failed to load IGA type" });
+  }
 });
 
 router.get("/savings-types", async (req, res) => {
