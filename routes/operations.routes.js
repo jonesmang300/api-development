@@ -188,6 +188,25 @@ async function getPreferredIdField(tableName, fallbacks) {
   return fallbacks.find((field) => columns.includes(field)) || fallbacks[0];
 }
 
+async function getRoleExtensionRegionIDs(userId) {
+  if (!userId) return [];
+
+  const [rows] = await db.query(
+    `
+    SELECT regionID
+    FROM tblsctretargeting_role_extension
+    WHERE userID = ?
+      AND regionID IS NOT NULL
+    ORDER BY regionID
+    `,
+    [userId],
+  );
+
+  return rows
+    .map((row) => String(row.regionID || "").trim())
+    .filter((value) => value.length > 0);
+}
+
 router.get("/groups", async (req, res) => {
   try {
     const authUser = parseAuthUser(req);
@@ -209,6 +228,16 @@ router.get("/groups", async (req, res) => {
     if (roleId === 5 && userId) {
       sql += " AND userID = ?";
       params.push(userId);
+    }
+
+    if (roleId === 2) {
+      const regionIDs = await getRoleExtensionRegionIDs(userId);
+      if (regionIDs.length === 0) {
+        return res.json([]);
+      }
+
+      sql += ` AND regionID IN (${regionIDs.map(() => "?").join(", ")})`;
+      params.push(...regionIDs);
     }
 
     sql += " ORDER BY groupID DESC";
@@ -673,6 +702,46 @@ router.get("/savings-types/:id", async (req, res) => {
   } catch (error) {
     console.error("Get savings type by id error:", error);
     res.status(500).json({ message: "Failed to load savings type" });
+  }
+});
+
+router.get("/role-extensions", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT id, userID, regionID
+      FROM tblsctretargeting_role_extension
+      ORDER BY id
+      `,
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error("Get role extensions error:", error);
+    res.status(500).json({ message: "Failed to load role extensions" });
+  }
+});
+
+router.get("/role-extensions/:id", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT id, userID, regionID
+      FROM tblsctretargeting_role_extension
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [req.params.id],
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "Role extension not found" });
+    }
+
+    res.json(rows[0]);
+  } catch (error) {
+    console.error("Get role extension by id error:", error);
+    res.status(500).json({ message: "Failed to load role extension" });
   }
 });
 

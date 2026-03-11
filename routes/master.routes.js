@@ -32,14 +32,50 @@ function parseAuthUser(req) {
   }
 }
 
+async function getRoleExtensionRegionIDs(userId) {
+  if (!userId) return [];
+
+  const [rows] = await db.query(
+    `
+    SELECT regionID
+    FROM tblsctretargeting_role_extension
+    WHERE userID = ?
+      AND regionID IS NOT NULL
+    ORDER BY regionID
+    `,
+    [userId],
+  );
+
+  return rows
+    .map((row) => String(row.regionID || "").trim())
+    .filter((value) => value.length > 0);
+}
+
 /* ===============================
    GET ALL REGIONS
    =============================== */
 router.get("/regions", async (req, res) => {
   try {
-    const [rows] = await db.query(
-      "SELECT regionID, name FROM tblregion ORDER BY name",
-    );
+    const authUser = parseAuthUser(req);
+    const roleId = Number(authUser?.userRole);
+    const userId = authUser?.id ? String(authUser.id) : "";
+
+    let sql = "SELECT regionID, name FROM tblregion";
+    const params = [];
+
+    if (roleId === 2) {
+      const regionIDs = await getRoleExtensionRegionIDs(userId);
+      if (regionIDs.length === 0) {
+        return res.json([]);
+      }
+
+      sql += ` WHERE regionID IN (${regionIDs.map(() => "?").join(", ")})`;
+      params.push(...regionIDs);
+    }
+
+    sql += " ORDER BY name";
+
+    const [rows] = await db.query(sql, params);
     res.json(rows);
   } catch (error) {
     console.error(error);
@@ -58,6 +94,20 @@ router.get("/districts", async (req, res) => {
   }
 
   try {
+    const authUser = parseAuthUser(req);
+    const roleId = Number(authUser?.userRole);
+    const userId = authUser?.id ? String(authUser.id) : "";
+
+    if (roleId === 2) {
+      const regionIDs = await getRoleExtensionRegionIDs(userId);
+      if (
+        regionIDs.length === 0 ||
+        !regionIDs.includes(String(regionID || "").trim())
+      ) {
+        return res.json([]);
+      }
+    }
+
     const [rows] = await db.query(
       `
       SELECT DistrictID, DistrictName, regionID
@@ -96,6 +146,28 @@ router.get("/tas", async (req, res) => {
       WHERE DistrictID = ?
     `;
     const params = [districtID];
+
+    if (roleId === 2) {
+      const regionIDs = await getRoleExtensionRegionIDs(userId);
+      if (regionIDs.length === 0) {
+        return res.json([]);
+      }
+
+      const [districtRows] = await db.query(
+        `
+        SELECT regionID
+        FROM tbldistrict
+        WHERE DistrictID = ?
+        LIMIT 1
+        `,
+        [districtID],
+      );
+
+      const districtRegionID = String(districtRows?.[0]?.regionID || "").trim();
+      if (!districtRegionID || !regionIDs.includes(districtRegionID)) {
+        return res.json([]);
+      }
+    }
 
     // role 5 sees only assigned TAIDs
     if (roleId === 5) {
@@ -148,6 +220,33 @@ router.get("/village-clusters", async (req, res) => {
   }
 
   try {
+    const authUser = parseAuthUser(req);
+    const roleId = Number(authUser?.userRole);
+    const userId = authUser?.id ? String(authUser.id) : "";
+
+    if (roleId === 2) {
+      const regionIDs = await getRoleExtensionRegionIDs(userId);
+      if (regionIDs.length === 0) {
+        return res.json([]);
+      }
+
+      const [taRows] = await db.query(
+        `
+        SELECT d.regionID
+        FROM tblta t
+        INNER JOIN tbldistrict d ON d.DistrictID = t.DistrictID
+        WHERE t.TAID = ?
+        LIMIT 1
+        `,
+        [taID],
+      );
+
+      const taRegionID = String(taRows?.[0]?.regionID || "").trim();
+      if (!taRegionID || !regionIDs.includes(taRegionID)) {
+        return res.json([]);
+      }
+    }
+
     const [rows] = await db.query(
       `
       SELECT 
