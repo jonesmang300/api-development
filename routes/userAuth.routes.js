@@ -1,5 +1,6 @@
 const express = require("express");
 const crypto = require("crypto");
+const nodemailer = require("nodemailer");
 const router = express.Router();
 const db = require("../config/db");
 
@@ -78,6 +79,197 @@ function createAuthToken(user) {
 
   return `${payload}.${signature}`;
 }
+
+/* ===============================
+   PASSWORD RESET HELPERS
+================================ */
+const RESET_TABLE = "tblsctretargeting_password_resets";
+let resetTableReady = false;
+
+async function ensureResetTable() {
+  if (resetTableReady) return;
+  await db.query(
+    `
+    CREATE TABLE IF NOT EXISTS ${RESET_TABLE} (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      userId INT NOT NULL,
+      tokenHash VARCHAR(128) NOT NULL,
+      expiresAt DATETIME NOT NULL,
+      used TINYINT(1) DEFAULT 0,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_user (userId),
+      INDEX idx_token (tokenHash),
+      CONSTRAINT fk_reset_user FOREIGN KEY (userId) REFERENCES tblsctretargeting_users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `,
+  );
+  resetTableReady = true;
+}
+
+const hashToken = (token) => crypto.createHash("sha256").update(token).digest("hex");
+
+function buildMailer() {
+  const host = process.env.SMTP_HOST;
+  const port = Number(process.env.SMTP_PORT || 587);
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+
+  if (!host || !user || !pass) {
+    throw new Error("SMTP_HOST/SMTP_USER/SMTP_PASS env vars are required for password reset");
+  }
+
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure: process.env.SMTP_SECURE === "true",
+    auth: { user, pass },
+  });
+}
+
+/* ===============================
+   FORGOT PASSWORD (SEND EMAIL)
+================================ */
+router.post("/users/forgot-password", async (req, res) => {
+  const { email, username } = req.body || {};
+  const loginKey = email || username;
+
+  if (!loginKey) {
+    return res.status(400).json({ message: "email or username is required" });
+  }
+
+  try {
+    await ensureResetTable();
+
+    const [rows] = await db.query(
+      `
+      SELECT id, email, username
+      FROM tblsctretargeting_users
+      WHERE email = ? OR username = ?
+      LIMIT 1
+    `,
+      [loginKey, loginKey],
+    );
+
+    if (rows.length === 0) {
+      // Do not reveal whether user exists
+      return res.status(200).json({ message: "If the account exists, a reset link has been sent" });
+    }
+
+    const user = rows[0];
+    const token = crypto.randomBytes(32).toString("hex");
+    const tokenHash = hashToken(token);
+    const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await db.query(
+      `
+      INSERT INTO ${RESET_TABLE} (userId, tokenHash, expiresAt, used)
+      VALUES (?, ?, ?, 0)
+    `,
+      [user.id, tokenHash, expires],
+    );
+
+    const transporter = buildMailer();
+    const resetBase = process.env.RESET_LINK_BASE || "https://comsip.cloud/reset-password";
+    const resetLink = `${resetBase}?token=${encodeURIComponent(token)}&email=${encodeURIComponent(
+      user.email || "",
+    )}`;
+    const from = process.env.SMTP_FROM || "no-reply@comsip.cloud";
+
+    await transporter.sendMail({
+      from,
+      to: user.email || from,
+      subject: "CIMIS password reset",
+      text: `You requested a password reset. Use the link below within 1 hour.\n\n${resetLink}\n\nIf you didn't request this, ignore this email.`,
+      html: `<p>You requested a password reset.</p><p><a href="${resetLink}">Reset your password</a> (valid for 1 hour).</p><p>If you didn't request this, ignore this email.</p>`,
+    });
+
+    res.status(200).json({ message: "If the account exists, a reset link has been sent" });
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    res.status(500).json({ message: "Failed to start password reset" });
+  }
+});
+
+/* ===============================
+   RESET PASSWORD (CONSUME TOKEN)
+================================ */
+router.post("/users/reset-password", async (req, res) => {
+  const { token, email, username, password } = req.body || {};
+
+  if (!token || !password || (!email && !username)) {
+    return res
+      .status(400)
+      .json({ message: "token, new password, and email or username are required" });
+  }
+
+  try {
+    await ensureResetTable();
+
+    const [userRows] = await db.query(
+      `
+      SELECT id, password
+      FROM tblsctretargeting_users
+      WHERE email = ? OR username = ?
+      LIMIT 1
+    `,
+      [email || username, email || username],
+    );
+
+    if (userRows.length === 0) {
+      return res.status(400).json({ message: "Invalid token or user" });
+    }
+
+    const user = userRows[0];
+    const tokenHash = hashToken(token);
+
+    const [resetRows] = await db.query(
+      `
+      SELECT id, expiresAt, used
+      FROM ${RESET_TABLE}
+      WHERE userId = ?
+        AND tokenHash = ?
+        AND used = 0
+      ORDER BY id DESC
+      LIMIT 1
+    `,
+      [user.id, tokenHash],
+    );
+
+    if (resetRows.length === 0) {
+      return res.status(400).json({ message: "Invalid or expired token" });
+    }
+
+    const reset = resetRows[0];
+    if (new Date(reset.expiresAt).getTime() < Date.now()) {
+      return res.status(400).json({ message: "Token expired" });
+    }
+
+    const newHashed = hashPassword(password);
+
+    await db.query(
+      `
+      UPDATE tblsctretargeting_users
+      SET password = ?
+      WHERE id = ?
+    `,
+      [newHashed, user.id],
+    );
+
+    await db.query(
+      `
+      UPDATE ${RESET_TABLE}
+      SET used = 1
+      WHERE id = ?
+    `,
+      [reset.id],
+    );
+
+    res.status(200).json({ message: "Password reset successful" });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res.status(500).json({ message: "Failed to reset password" });
+  }
+});
 
 /**
  * REGISTER USER
@@ -265,6 +457,167 @@ router.get("/user-roles/:id", async (req, res) => {
   } catch (error) {
     console.error("Get user role by id error:", error);
     res.status(500).json({ message: "Failed to load user role" });
+  }
+});
+
+/* ===============================
+   USER REPORT (EXPORT CSV)
+================================ */
+router.get("/users/report", async (_req, res) => {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT
+        COALESCE(DistrictID, '') AS district,
+        COALESCE(TAID, '') AS ta,
+        username,
+        email,
+        '' AS password_placeholder
+      FROM tblsctretargeting_users
+      ORDER BY DistrictID, TAID, username
+      `,
+    );
+
+    const header = "DISTRICT,TA,USERNAME,PASSWORD,EMAIL";
+    const csvLines = rows.map(
+      (r) =>
+        [
+          r.district,
+          r.ta,
+          r.username,
+          "NOT_STORED",
+          r.email || "",
+        ]
+          .map((v) => `"${String(v).replace(/\"/g, '""')}"`)
+          .join(","),
+    );
+
+    const csv = [header, ...csvLines].join("\n");
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", "attachment; filename=users.csv");
+    return res.status(200).send(csv);
+  } catch (error) {
+    console.error("User report error:", error);
+    res.status(500).json({ message: "Failed to generate report" });
+  }
+});
+
+/* ===============================
+   USER MANAGEMENT (ADMIN)
+================================ */
+
+// List users (basic profile info)
+router.get("/users", async (_req, res) => {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT
+        id,
+        username,
+        email,
+        userRole,
+        firstname,
+        lastname
+      FROM tblsctretargeting_users
+      ORDER BY id DESC
+      `,
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error("List users error:", error);
+    res.status(500).json({ message: "Failed to load users" });
+  }
+});
+
+// Get single user
+router.get("/users/:id", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `
+      SELECT
+        id,
+        username,
+        email,
+        userRole,
+        firstname,
+        lastname
+      FROM tblsctretargeting_users
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [req.params.id],
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json(rows[0]);
+  } catch (error) {
+    console.error("Get user error:", error);
+    res.status(500).json({ message: "Failed to load user" });
+  }
+});
+
+// Update user role / name / password
+router.patch("/users/:id", async (req, res) => {
+  const { userRole, firstname, lastname, newPassword } = req.body || {};
+
+  if (
+    userRole === undefined &&
+    firstname === undefined &&
+    lastname === undefined &&
+    newPassword === undefined
+  ) {
+    return res.status(400).json({ message: "No fields provided" });
+  }
+
+  try {
+    const setParts = [];
+    const values = [];
+
+    if (userRole !== undefined) {
+      setParts.push("userRole = ?");
+      values.push(userRole);
+    }
+
+    if (firstname !== undefined) {
+      setParts.push("firstname = ?");
+      values.push(firstname);
+    }
+
+    if (lastname !== undefined) {
+      setParts.push("lastname = ?");
+      values.push(lastname);
+    }
+
+    if (newPassword !== undefined && newPassword !== null && newPassword !== "") {
+      const hashed = hashPassword(newPassword);
+      setParts.push("password = ?");
+      values.push(hashed);
+    }
+
+    values.push(req.params.id);
+
+    const [result] = await db.query(
+      `
+      UPDATE tblsctretargeting_users
+      SET ${setParts.join(", ")}
+      WHERE id = ?
+      `,
+      values,
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({ message: "User updated" });
+  } catch (error) {
+    console.error("Update user error:", error);
+    res.status(500).json({ message: "Failed to update user" });
   }
 });
 

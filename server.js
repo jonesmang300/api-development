@@ -15,7 +15,7 @@ app.use("/api", require("./routes/userAuth.routes"));
  */
 app.get("/health", async (req, res) => {
   try {
-    const db = require("./db");
+    const db = require("./config/db");
     await db.query("SELECT 1");
     res.json({ status: "OK", database: "connected" });
   } catch {
