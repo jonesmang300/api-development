@@ -5,6 +5,24 @@ const db = require("../config/db");
 
 let beneficiaryGroupColumnsCache = null;
 
+function toDateOnly(value) {
+  if (!value) return null;
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return raw;
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed.toISOString().slice(0, 10);
+}
+
 async function getBeneficiaryGroupColumns(conn = db) {
   if (beneficiaryGroupColumnsCache) {
     return beneficiaryGroupColumnsCache;
@@ -442,7 +460,7 @@ router.post("/groups/sync-with-beneficiaries", async (req, res) => {
       ];
       const values = [
         beneficiary.sex ?? null,
-        beneficiary.dob ?? null,
+        toDateOnly(beneficiary.dob),
         beneficiary.nat_id ?? null,
         beneficiary.hh_size ?? null,
         beneficiary.groupname || group.groupname || null,
