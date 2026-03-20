@@ -271,7 +271,17 @@ router.get("/beneficiaries/:sppCode", async (req, res) => {
 router.patch("/beneficiaries/:sppCode", async (req, res) => {
   try {
     const { sppCode } = req.params;
-    const { sex, dob, nat_id, hh_size, hh_code, groupname, groupCode, groupID, selected } = req.body;
+    const {
+      sex,
+      dob,
+      nat_id,
+      hh_size,
+      hh_code,
+      groupname,
+      groupCode,
+      groupID,
+      selected,
+    } = req.body;
     const groupValue = groupCode ?? groupID ?? null;
     const { hasGroupCode, hasGroupID } = await getBeneficiaryGroupColumns();
 
@@ -363,6 +373,9 @@ router.post("/beneficiaries/bulk-sync", async (req, res) => {
   try {
     await conn.beginTransaction();
     const { hasGroupCode, hasGroupID } = await getBeneficiaryGroupColumns();
+    const [[{ hasDeviceId = 0 } = {}]] = await conn.query(
+      "SELECT COUNT(*) AS hasDeviceId FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tblsctretargeting_beneficiaries' AND COLUMN_NAME = 'deviceId'",
+    );
 
     for (const b of updates) {
       const groupValue = b.groupCode ?? b.groupID ?? null;
@@ -393,9 +406,12 @@ router.post("/beneficiaries/bulk-sync", async (req, res) => {
       `);
       values.push(b.selected, b.selected);
 
-      setParts.push("deviceId = COALESCE(?, deviceId)");
+      if (hasDeviceId) {
+        setParts.push("deviceId = COALESCE(?, deviceId)");
+        values.push(b.deviceId);
+      }
+
       setParts.push("updated_at = NOW()");
-      values.push(b.deviceId);
       values.push(b.sppCode);
 
       await conn.query(

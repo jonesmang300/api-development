@@ -707,12 +707,24 @@ router.get("/savings-types/:id", async (req, res) => {
 
 router.get("/role-extensions", async (req, res) => {
   try {
+    const where = [];
+    const params = [];
+
+    if (req.query.userID) {
+      where.push("userID = ?");
+      params.push(req.query.userID);
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
     const [rows] = await db.query(
       `
       SELECT id, userID, regionID
       FROM tblsctretargeting_role_extension
-      ORDER BY id
+      ${whereSql}
+      ORDER BY id DESC
       `,
+      params,
     );
 
     res.json(rows);
@@ -742,6 +754,50 @@ router.get("/role-extensions/:id", async (req, res) => {
   } catch (error) {
     console.error("Get role extension by id error:", error);
     res.status(500).json({ message: "Failed to load role extension" });
+  }
+});
+
+router.post("/role-extensions", async (req, res) => {
+  const { userID, regionID } = req.body || {};
+
+  if (!userID || !regionID) {
+    return res.status(400).json({ message: "userID and regionID are required" });
+  }
+
+  try {
+    const [result] = await db.query(
+      `
+      INSERT INTO tblsctretargeting_role_extension (userID, regionID)
+      VALUES (?, ?)
+      `,
+      [userID, regionID],
+    );
+
+    res.status(201).json({ id: result.insertId, userID, regionID });
+  } catch (error) {
+    console.error("Create role extension error:", error);
+    res.status(500).json({ message: "Failed to create role extension" });
+  }
+});
+
+router.delete("/role-extensions/:id", async (req, res) => {
+  try {
+    const [result] = await db.query(
+      `
+      DELETE FROM tblsctretargeting_role_extension
+      WHERE id = ?
+      `,
+      [req.params.id],
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Role extension not found" });
+    }
+
+    res.json({ message: "Role extension removed" });
+  } catch (error) {
+    console.error("Delete role extension error:", error);
+    res.status(500).json({ message: "Failed to delete role extension" });
   }
 });
 
