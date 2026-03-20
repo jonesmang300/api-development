@@ -369,6 +369,8 @@ router.post("/beneficiaries/bulk-sync", async (req, res) => {
   }
 
   const conn = await db.getConnection();
+  let currentSppCode = null;
+  let currentIndex = -1;
 
   try {
     await conn.beginTransaction();
@@ -377,7 +379,15 @@ router.post("/beneficiaries/bulk-sync", async (req, res) => {
       "SELECT COUNT(*) AS hasDeviceId FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tblsctretargeting_beneficiaries' AND COLUMN_NAME = 'deviceId'",
     );
 
-    for (const b of updates) {
+    for (let index = 0; index < updates.length; index += 1) {
+      const b = updates[index];
+      currentIndex = index;
+      currentSppCode = b?.sppCode || null;
+
+      if (!currentSppCode) {
+        throw new Error(`Missing sppCode at item ${index + 1}`);
+      }
+
       const groupValue = b.groupCode ?? b.groupID ?? null;
       const setParts = [
         "sex = COALESCE(?, sex)",
@@ -412,9 +422,9 @@ router.post("/beneficiaries/bulk-sync", async (req, res) => {
       }
 
       setParts.push("updated_at = NOW()");
-      values.push(b.sppCode);
+      values.push(currentSppCode);
 
-      await conn.query(
+      const [result] = await conn.query(
         `
         UPDATE tblsctretargeting_beneficiaries
         SET
@@ -423,14 +433,38 @@ router.post("/beneficiaries/bulk-sync", async (req, res) => {
         `,
         values,
       );
+
+      if (Number(result?.affectedRows || 0) === 0) {
+        throw new Error(`Beneficiary not found for sppCode ${currentSppCode}`);
+      }
     }
 
     await conn.commit();
     res.json({ message: "✅ Sync completed", count: updates.length });
   } catch (error) {
     await conn.rollback();
-    console.error(error);
-    res.status(500).json({ message: "Bulk sync failed" });
+    const detail =
+      error?.sqlMessage ||
+      error?.message ||
+      error?.code ||
+      "Unknown bulk sync error";
+
+    console.error("Bulk sync failed", {
+      index: currentIndex,
+      sppCode: currentSppCode,
+      code: error?.code,
+      sqlMessage: error?.sqlMessage,
+      message: error?.message,
+    });
+
+    res.status(500).json({
+      message: currentSppCode
+        ? `Bulk sync failed for ${currentSppCode}: ${detail}`
+        : `Bulk sync failed: ${detail}`,
+      sppCode: currentSppCode,
+      index: currentIndex >= 0 ? currentIndex : undefined,
+      detail,
+    });
   } finally {
     conn.release();
   }
