@@ -1006,29 +1006,49 @@ router.post("/role-extensions", async (req, res) => {
 
 router.get("/user-locations", async (req, res) => {
   try {
+    const columns = await getTableColumns("tblsctretargeting_user_location");
+    const regionField = columns.includes("regionID")
+      ? "regionID"
+      : columns.includes("RegionID")
+        ? "RegionID"
+        : null;
+    const districtField = columns.includes("districtID")
+      ? "districtID"
+      : columns.includes("DistrictID")
+        ? "DistrictID"
+        : null;
+    const taField = columns.includes("taID")
+      ? "taID"
+      : columns.includes("TAID")
+        ? "TAID"
+        : null;
+
     const where = [];
     const params = [];
 
     if (req.query.userID) {
-      where.push("userID = ?");
+      where.push("ul.userID = ?");
       params.push(req.query.userID);
     }
 
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const regionExpr = regionField ? `ul.\`${regionField}\`` : "NULL";
+    const districtExpr = districtField ? `ul.\`${districtField}\`` : "NULL";
+    const taExpr = taField ? `ul.\`${taField}\`` : "NULL";
 
     const [rows] = await db.query(
       `
       SELECT
         ul.*,
-        COALESCE(ul.districtID, t.DistrictID) AS resolvedDistrictID,
-        COALESCE(ul.regionID, d.regionID) AS resolvedRegionID,
+        COALESCE(${districtExpr}, t.DistrictID) AS resolvedDistrictID,
+        COALESCE(${regionExpr}, d.regionID) AS resolvedRegionID,
         t.TAName AS taName,
         d.DistrictName AS districtName,
         r.name AS regionName
       FROM tblsctretargeting_user_location ul
-      LEFT JOIN tblta t ON t.TAID = ul.taID
-      LEFT JOIN tbldistrict d ON d.DistrictID = COALESCE(ul.districtID, t.DistrictID)
-      LEFT JOIN tblregion r ON r.regionID = COALESCE(ul.regionID, d.regionID)
+      LEFT JOIN tblta t ON t.TAID = ${taExpr}
+      LEFT JOIN tbldistrict d ON d.DistrictID = COALESCE(${districtExpr}, t.DistrictID)
+      LEFT JOIN tblregion r ON r.regionID = COALESCE(${regionExpr}, d.regionID)
       ${whereSql}
       ORDER BY ul.userID DESC
       `,
