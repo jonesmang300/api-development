@@ -1018,10 +1018,19 @@ router.get("/user-locations", async (req, res) => {
 
     const [rows] = await db.query(
       `
-      SELECT *
-      FROM tblsctretargeting_user_location
+      SELECT
+        ul.*,
+        COALESCE(ul.districtID, t.DistrictID) AS resolvedDistrictID,
+        COALESCE(ul.regionID, d.regionID) AS resolvedRegionID,
+        t.TAName AS taName,
+        d.DistrictName AS districtName,
+        r.name AS regionName
+      FROM tblsctretargeting_user_location ul
+      LEFT JOIN tblta t ON t.TAID = ul.taID
+      LEFT JOIN tbldistrict d ON d.DistrictID = COALESCE(ul.districtID, t.DistrictID)
+      LEFT JOIN tblregion r ON r.regionID = COALESCE(ul.regionID, d.regionID)
       ${whereSql}
-      ORDER BY userID DESC
+      ORDER BY ul.userID DESC
       `,
       params,
     );
