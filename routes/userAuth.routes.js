@@ -9,6 +9,17 @@ const PBKDF2_ITERATIONS = 120000;
 const PBKDF2_KEYLEN = 16;
 const PBKDF2_DIGEST = "sha256";
 
+function normalizeEmail(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed || null;
+}
+
+function normalizeText(value) {
+  if (typeof value !== "string") return "";
+  return value.trim();
+}
+
 function hashPassword(plainPassword) {
   const salt = crypto.randomBytes(8).toString("base64");
   const hash = crypto
@@ -131,7 +142,9 @@ function buildMailer() {
 ================================ */
 router.post("/users/forgot-password", async (req, res) => {
   const { email, username } = req.body || {};
-  const loginKey = email || username;
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedUsername = normalizeText(username);
+  const loginKey = normalizedEmail || normalizedUsername;
 
   if (!loginKey) {
     return res.status(400).json({ message: "email or username is required" });
@@ -147,7 +160,7 @@ router.post("/users/forgot-password", async (req, res) => {
       WHERE email = ? OR username = ?
       LIMIT 1
     `,
-      [loginKey, loginKey],
+      [normalizedEmail || loginKey, normalizedUsername || loginKey],
     );
 
     if (rows.length === 0) {
@@ -195,8 +208,10 @@ router.post("/users/forgot-password", async (req, res) => {
 ================================ */
 router.post("/users/reset-password", async (req, res) => {
   const { token, email, username, password } = req.body || {};
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedUsername = normalizeText(username);
 
-  if (!token || !password || (!email && !username)) {
+  if (!token || !password || (!normalizedEmail && !normalizedUsername)) {
     return res
       .status(400)
       .json({ message: "token, new password, and email or username are required" });
@@ -212,7 +227,7 @@ router.post("/users/reset-password", async (req, res) => {
       WHERE email = ? OR username = ?
       LIMIT 1
     `,
-      [email || username, email || username],
+      [normalizedEmail || normalizedUsername, normalizedUsername || normalizedEmail],
     );
 
     if (userRows.length === 0) {
@@ -276,8 +291,10 @@ router.post("/users/reset-password", async (req, res) => {
  */
 router.post("/users/register", async (req, res) => {
   const { username, email, password, userRole, firstname, lastname } = req.body;
+  const normalizedUsername = normalizeText(username);
+  const normalizedEmail = normalizeEmail(email);
 
-  if (!username || !password || !userRole) {
+  if (!normalizedUsername || !password || !userRole) {
     return res
       .status(400)
       .json({ message: "username, password and userRole are required" });
@@ -291,10 +308,10 @@ router.post("/users/register", async (req, res) => {
       SELECT id
       FROM tblsctretargeting_users
       WHERE username = ?
-        OR (email IS NOT NULL AND email = ?)
+         OR (email IS NOT NULL AND email = ?)
       LIMIT 1
       `,
-      [username, email || null],
+      [normalizedUsername, normalizedEmail],
     );
 
     if (existingRows.length > 0) {
@@ -316,8 +333,8 @@ router.post("/users/register", async (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?)
       `,
       [
-        username,
-        email || null,
+        normalizedUsername,
+        normalizedEmail,
         hashedPassword,
         userRole,
         firstname || null,
@@ -340,8 +357,9 @@ router.post("/users/register", async (req, res) => {
  */
 router.post("/users/login", async (req, res) => {
   const { username, email, password } = req.body;
-
-  const loginKey = username || email;
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedUsername = normalizeText(username);
+  const loginKey = normalizedUsername || normalizedEmail;
 
   if (!loginKey || !password) {
     return res
@@ -563,9 +581,15 @@ router.get("/users/:id", async (req, res) => {
 
 // Update user role / name / password
 router.patch("/users/:id", async (req, res) => {
-  const { userRole, firstname, lastname, newPassword } = req.body || {};
+  const { username, email, userRole, firstname, lastname, newPassword } = req.body || {};
+  const normalizedUsername =
+    username === undefined ? undefined : normalizeText(username);
+  const normalizedEmail =
+    email === undefined ? undefined : normalizeEmail(email);
 
   if (
+    username === undefined &&
+    email === undefined &&
     userRole === undefined &&
     firstname === undefined &&
     lastname === undefined &&
@@ -574,9 +598,51 @@ router.patch("/users/:id", async (req, res) => {
     return res.status(400).json({ message: "No fields provided" });
   }
 
+  if (username !== undefined && !normalizedUsername) {
+    return res.status(400).json({ message: "username cannot be empty" });
+  }
+
   try {
+    if (normalizedUsername !== undefined || normalizedEmail !== undefined) {
+      const [existingRows] = await db.query(
+        `
+        SELECT id
+        FROM tblsctretargeting_users
+        WHERE id <> ?
+          AND (
+            (? IS NOT NULL AND username = ?)
+            OR (? IS NOT NULL AND email = ?)
+          )
+        LIMIT 1
+        `,
+        [
+          req.params.id,
+          normalizedUsername || null,
+          normalizedUsername || null,
+          normalizedEmail || null,
+          normalizedEmail || null,
+        ],
+      );
+
+      if (existingRows.length > 0) {
+        return res.status(409).json({
+          message: "User with the same username or email already exists",
+        });
+      }
+    }
+
     const setParts = [];
     const values = [];
+
+    if (username !== undefined) {
+      setParts.push("username = ?");
+      values.push(normalizedUsername);
+    }
+
+    if (email !== undefined) {
+      setParts.push("email = ?");
+      values.push(normalizedEmail);
+    }
 
     if (userRole !== undefined) {
       setParts.push("userRole = ?");

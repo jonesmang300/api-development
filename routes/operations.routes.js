@@ -1004,6 +1004,97 @@ router.post("/role-extensions", async (req, res) => {
   }
 });
 
+router.get("/user-locations", async (req, res) => {
+  try {
+    const where = [];
+    const params = [];
+
+    if (req.query.userID) {
+      where.push("userID = ?");
+      params.push(req.query.userID);
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    const [rows] = await db.query(
+      `
+      SELECT *
+      FROM tblsctretargeting_user_location
+      ${whereSql}
+      ORDER BY userID DESC
+      `,
+      params,
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error("Get user locations error:", error);
+    res.status(500).json({ message: "Failed to load user locations" });
+  }
+});
+
+router.post("/user-locations", async (req, res) => {
+  const payload = req.body || {};
+  const { userID } = payload;
+
+  if (!userID) {
+    return res.status(400).json({ message: "userID is required" });
+  }
+
+  try {
+    const columns = await getTableColumns("tblsctretargeting_user_location");
+    const supportedFields = ["userID", "regionID", "districtID", "taID", "villageClusterID"];
+    const providedFields = supportedFields.filter(
+      (field) => payload[field] !== undefined && columns.includes(field),
+    );
+
+    if (providedFields.length === 0 || !providedFields.includes("userID")) {
+      return res.status(400).json({ message: "No valid location fields provided" });
+    }
+
+    const columnsSql = providedFields.map((field) => `\`${field}\``).join(", ");
+    const placeholdersSql = providedFields.map(() => "?").join(", ");
+    const values = providedFields.map((field) => payload[field]);
+
+    const [result] = await db.query(
+      `
+      INSERT INTO tblsctretargeting_user_location (${columnsSql})
+      VALUES (${placeholdersSql})
+      `,
+      values,
+    );
+
+    res.status(201).json({
+      id: result.insertId,
+      ...Object.fromEntries(providedFields.map((field) => [field, payload[field]])),
+    });
+  } catch (error) {
+    console.error("Create user location error:", error);
+    res.status(500).json({ message: "Failed to create user location" });
+  }
+});
+
+router.delete("/user-locations/:id", async (req, res) => {
+  try {
+    const [result] = await db.query(
+      `
+      DELETE FROM tblsctretargeting_user_location
+      WHERE id = ?
+      `,
+      [req.params.id],
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "User location not found" });
+    }
+
+    res.json({ message: "User location removed" });
+  } catch (error) {
+    console.error("Delete user location error:", error);
+    res.status(500).json({ message: "Failed to delete user location" });
+  }
+});
+
 router.delete("/role-extensions/:id", async (req, res) => {
   try {
     const [result] = await db.query(
