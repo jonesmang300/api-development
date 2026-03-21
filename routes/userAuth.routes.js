@@ -126,7 +126,9 @@ function buildMailer() {
   const pass = process.env.SMTP_PASS;
 
   if (!host || !user || !pass) {
-    throw new Error("SMTP_HOST/SMTP_USER/SMTP_PASS env vars are required for password reset");
+    const error = new Error("Password reset email is not configured on the server");
+    error.code = "SMTP_NOT_CONFIGURED";
+    throw error;
   }
 
   return nodemailer.createTransport({
@@ -169,6 +171,11 @@ router.post("/users/forgot-password", async (req, res) => {
     }
 
     const user = rows[0];
+    if (!user.email) {
+      return res.status(400).json({
+        message: "This user does not have an email address for password reset",
+      });
+    }
     const token = crypto.randomBytes(32).toString("hex");
     const tokenHash = hashToken(token);
     const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
@@ -199,7 +206,14 @@ router.post("/users/forgot-password", async (req, res) => {
     res.status(200).json({ message: "If the account exists, a reset link has been sent" });
   } catch (error) {
     console.error("Forgot password error:", error);
-    res.status(500).json({ message: "Failed to start password reset" });
+    if (error?.code === "SMTP_NOT_CONFIGURED") {
+      return res.status(500).json({
+        message: "Password reset email is not configured on the server",
+      });
+    }
+    res.status(500).json({
+      message: error?.message || "Failed to start password reset",
+    });
   }
 });
 
