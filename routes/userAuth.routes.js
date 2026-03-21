@@ -96,6 +96,8 @@ function createAuthToken(user) {
 ================================ */
 const RESET_TABLE = "tblsctretargeting_password_resets";
 let resetTableReady = false;
+const getResetDeliveryMode = () =>
+  String(process.env.PASSWORD_RESET_MODE || "console").trim().toLowerCase();
 
 async function ensureResetTable() {
   if (resetTableReady) return;
@@ -120,6 +122,10 @@ async function ensureResetTable() {
 const hashToken = (token) => crypto.createHash("sha256").update(token).digest("hex");
 
 function buildMailer() {
+  if (getResetDeliveryMode() === "console") {
+    return null;
+  }
+
   const host = process.env.SMTP_HOST;
   const port = Number(process.env.SMTP_PORT || 587);
   const user = process.env.SMTP_USER;
@@ -188,12 +194,19 @@ router.post("/users/forgot-password", async (req, res) => {
       [user.id, tokenHash, expires],
     );
 
-    const transporter = buildMailer();
     const resetBase = process.env.RESET_LINK_BASE || "https://comsip.cloud/reset-password";
     const resetLink = `${resetBase}?token=${encodeURIComponent(token)}&email=${encodeURIComponent(
       user.email || "",
     )}`;
+    const transporter = buildMailer();
     const from = process.env.SMTP_FROM || "no-reply@comsip.cloud";
+
+    if (!transporter) {
+      console.log("[PASSWORD RESET] Reset link for %s: %s", user.email, resetLink);
+      return res.status(200).json({
+        message: "Password reset link generated in server logs",
+      });
+    }
 
     await transporter.sendMail({
       from,
