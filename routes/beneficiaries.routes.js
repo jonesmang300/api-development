@@ -39,13 +39,6 @@ const buildGroupSelectSql = async () => {
   return "NULL AS groupCode, NULL AS groupID,";
 };
 
-const getGroupWhereColumn = async () => {
-  const { hasGroupCode, hasGroupID } = await getBeneficiaryGroupColumns();
-  if (hasGroupCode) return "groupCode";
-  if (hasGroupID) return "groupID";
-  return null;
-};
-
 const buildGroupWhereSql = async () => {
   const { hasGroupCode, hasGroupID } = await getBeneficiaryGroupColumns();
 
@@ -198,8 +191,8 @@ router.get("/beneficiaries/verified/deviceId", async (req, res) => {
 /* ===============================
    LIST BENEFICIARIES BY GROUP CODE/ID
    =============================== */
-router.get("/beneficiaries/group/:groupCode", async (req, res) => {
-  const { groupCode } = req.params;
+router.get("/beneficiaries/group", async (req, res) => {
+  const { groupCode } = req.query;
 
   if (!groupCode) {
     return res.status(400).json({ message: "groupCode is required" });
@@ -235,7 +228,7 @@ router.get("/beneficiaries/group/:groupCode", async (req, res) => {
       ORDER BY hh_head_name
     `;
 
-    const [rows] = await db.query(sql, whereConfig.paramsFor(groupCode));
+    const [rows] = await db.query(sql, whereConfig.paramsFor(String(groupCode).trim()));
     res.json(rows);
   } catch (error) {
     console.error("Group beneficiaries error:", error);
