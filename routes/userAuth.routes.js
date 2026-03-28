@@ -9,6 +9,17 @@ const PBKDF2_ITERATIONS = 120000;
 const PBKDF2_KEYLEN = 16;
 const PBKDF2_DIGEST = "sha256";
 
+function normalizeEmail(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed || null;
+}
+
+function normalizeText(value) {
+  if (typeof value !== "string") return "";
+  return value.trim();
+}
+
 function hashPassword(plainPassword) {
   const salt = crypto.randomBytes(8).toString("base64");
   const hash = crypto
@@ -85,6 +96,8 @@ function createAuthToken(user) {
 ================================ */
 const RESET_TABLE = "tblsctretargeting_password_resets";
 let resetTableReady = false;
+const getResetDeliveryMode = () =>
+  String(process.env.PASSWORD_RESET_MODE || "console").trim().toLowerCase();
 
 async function ensureResetTable() {
   if (resetTableReady) return;
@@ -109,13 +122,19 @@ async function ensureResetTable() {
 const hashToken = (token) => crypto.createHash("sha256").update(token).digest("hex");
 
 function buildMailer() {
+  if (getResetDeliveryMode() === "console") {
+    return null;
+  }
+
   const host = process.env.SMTP_HOST;
   const port = Number(process.env.SMTP_PORT || 587);
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
 
   if (!host || !user || !pass) {
-    throw new Error("SMTP_HOST/SMTP_USER/SMTP_PASS env vars are required for password reset");
+    const error = new Error("Password reset email is not configured on the server");
+    error.code = "SMTP_NOT_CONFIGURED";
+    throw error;
   }
 
   return nodemailer.createTransport({
@@ -131,7 +150,9 @@ function buildMailer() {
 ================================ */
 router.post("/users/forgot-password", async (req, res) => {
   const { email, username } = req.body || {};
-  const loginKey = email || username;
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedUsername = normalizeText(username);
+  const loginKey = normalizedEmail || normalizedUsername;
 
   if (!loginKey) {
     return res.status(400).json({ message: "email or username is required" });
@@ -147,7 +168,7 @@ router.post("/users/forgot-password", async (req, res) => {
       WHERE email = ? OR username = ?
       LIMIT 1
     `,
-      [loginKey, loginKey],
+      [normalizedEmail || loginKey, normalizedUsername || loginKey],
     );
 
     if (rows.length === 0) {
@@ -156,6 +177,11 @@ router.post("/users/forgot-password", async (req, res) => {
     }
 
     const user = rows[0];
+    if (!user.email) {
+      return res.status(400).json({
+        message: "This user does not have an email address for password reset",
+      });
+    }
     const token = crypto.randomBytes(32).toString("hex");
     const tokenHash = hashToken(token);
     const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
@@ -168,12 +194,19 @@ router.post("/users/forgot-password", async (req, res) => {
       [user.id, tokenHash, expires],
     );
 
-    const transporter = buildMailer();
     const resetBase = process.env.RESET_LINK_BASE || "https://comsip.cloud/reset-password";
     const resetLink = `${resetBase}?token=${encodeURIComponent(token)}&email=${encodeURIComponent(
       user.email || "",
     )}`;
+    const transporter = buildMailer();
     const from = process.env.SMTP_FROM || "no-reply@comsip.cloud";
+
+    if (!transporter) {
+      console.log("[PASSWORD RESET] Reset link for %s: %s", user.email, resetLink);
+      return res.status(200).json({
+        message: "Password reset link generated in server logs",
+      });
+    }
 
     await transporter.sendMail({
       from,
@@ -186,7 +219,14 @@ router.post("/users/forgot-password", async (req, res) => {
     res.status(200).json({ message: "If the account exists, a reset link has been sent" });
   } catch (error) {
     console.error("Forgot password error:", error);
-    res.status(500).json({ message: "Failed to start password reset" });
+    if (error?.code === "SMTP_NOT_CONFIGURED") {
+      return res.status(500).json({
+        message: "Password reset email is not configured on the server",
+      });
+    }
+    res.status(500).json({
+      message: error?.message || "Failed to start password reset",
+    });
   }
 });
 
@@ -195,8 +235,10 @@ router.post("/users/forgot-password", async (req, res) => {
 ================================ */
 router.post("/users/reset-password", async (req, res) => {
   const { token, email, username, password } = req.body || {};
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedUsername = normalizeText(username);
 
-  if (!token || !password || (!email && !username)) {
+  if (!token || !password || (!normalizedEmail && !normalizedUsername)) {
     return res
       .status(400)
       .json({ message: "token, new password, and email or username are required" });
@@ -212,7 +254,7 @@ router.post("/users/reset-password", async (req, res) => {
       WHERE email = ? OR username = ?
       LIMIT 1
     `,
-      [email || username, email || username],
+      [normalizedEmail || normalizedUsername, normalizedUsername || normalizedEmail],
     );
 
     if (userRows.length === 0) {
@@ -276,8 +318,10 @@ router.post("/users/reset-password", async (req, res) => {
  */
 router.post("/users/register", async (req, res) => {
   const { username, email, password, userRole, firstname, lastname } = req.body;
+  const normalizedUsername = normalizeText(username);
+  const normalizedEmail = normalizeEmail(email);
 
-  if (!username || !password || !userRole) {
+  if (!normalizedUsername || !password || !userRole) {
     return res
       .status(400)
       .json({ message: "username, password and userRole are required" });
@@ -291,10 +335,10 @@ router.post("/users/register", async (req, res) => {
       SELECT id
       FROM tblsctretargeting_users
       WHERE username = ?
-        OR (email IS NOT NULL AND email = ?)
+         OR (email IS NOT NULL AND email = ?)
       LIMIT 1
       `,
-      [username, email || null],
+      [normalizedUsername, normalizedEmail],
     );
 
     if (existingRows.length > 0) {
@@ -316,8 +360,8 @@ router.post("/users/register", async (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?)
       `,
       [
-        username,
-        email || null,
+        normalizedUsername,
+        normalizedEmail,
         hashedPassword,
         userRole,
         firstname || null,
@@ -340,8 +384,9 @@ router.post("/users/register", async (req, res) => {
  */
 router.post("/users/login", async (req, res) => {
   const { username, email, password } = req.body;
-
-  const loginKey = username || email;
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedUsername = normalizeText(username);
+  const loginKey = normalizedUsername || normalizedEmail;
 
   if (!loginKey || !password) {
     return res
@@ -563,9 +608,15 @@ router.get("/users/:id", async (req, res) => {
 
 // Update user role / name / password
 router.patch("/users/:id", async (req, res) => {
-  const { userRole, firstname, lastname, newPassword } = req.body || {};
+  const { username, email, userRole, firstname, lastname, newPassword } = req.body || {};
+  const normalizedUsername =
+    username === undefined ? undefined : normalizeText(username);
+  const normalizedEmail =
+    email === undefined ? undefined : normalizeEmail(email);
 
   if (
+    username === undefined &&
+    email === undefined &&
     userRole === undefined &&
     firstname === undefined &&
     lastname === undefined &&
@@ -574,9 +625,51 @@ router.patch("/users/:id", async (req, res) => {
     return res.status(400).json({ message: "No fields provided" });
   }
 
+  if (username !== undefined && !normalizedUsername) {
+    return res.status(400).json({ message: "username cannot be empty" });
+  }
+
   try {
+    if (normalizedUsername !== undefined || normalizedEmail !== undefined) {
+      const [existingRows] = await db.query(
+        `
+        SELECT id
+        FROM tblsctretargeting_users
+        WHERE id <> ?
+          AND (
+            (? IS NOT NULL AND username = ?)
+            OR (? IS NOT NULL AND email = ?)
+          )
+        LIMIT 1
+        `,
+        [
+          req.params.id,
+          normalizedUsername || null,
+          normalizedUsername || null,
+          normalizedEmail || null,
+          normalizedEmail || null,
+        ],
+      );
+
+      if (existingRows.length > 0) {
+        return res.status(409).json({
+          message: "User with the same username or email already exists",
+        });
+      }
+    }
+
     const setParts = [];
     const values = [];
+
+    if (username !== undefined) {
+      setParts.push("username = ?");
+      values.push(normalizedUsername);
+    }
+
+    if (email !== undefined) {
+      setParts.push("email = ?");
+      values.push(normalizedEmail);
+    }
 
     if (userRole !== undefined) {
       setParts.push("userRole = ?");

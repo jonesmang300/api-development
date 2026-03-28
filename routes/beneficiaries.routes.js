@@ -39,10 +39,30 @@ const buildGroupSelectSql = async () => {
   return "NULL AS groupCode, NULL AS groupID,";
 };
 
-const getGroupWhereColumn = async () => {
+const buildGroupWhereSql = async () => {
   const { hasGroupCode, hasGroupID } = await getBeneficiaryGroupColumns();
-  if (hasGroupCode) return "groupCode";
-  if (hasGroupID) return "groupID";
+
+  if (hasGroupCode && hasGroupID) {
+    return {
+      whereSql: "(groupCode = ? OR groupID = ?)",
+      paramsFor: (groupCode) => [groupCode, groupCode],
+    };
+  }
+
+  if (hasGroupCode) {
+    return {
+      whereSql: "groupCode = ?",
+      paramsFor: (groupCode) => [groupCode],
+    };
+  }
+
+  if (hasGroupID) {
+    return {
+      whereSql: "groupID = ?",
+      paramsFor: (groupCode) => [groupCode],
+    };
+  }
+
   return null;
 };
 
@@ -171,18 +191,18 @@ router.get("/beneficiaries/verified/deviceId", async (req, res) => {
 /* ===============================
    LIST BENEFICIARIES BY GROUP CODE/ID
    =============================== */
-router.get("/beneficiaries/group/:groupCode", async (req, res) => {
-  const { groupCode } = req.params;
+router.get("/beneficiaries/group", async (req, res) => {
+  const { groupCode } = req.query;
 
   if (!groupCode) {
     return res.status(400).json({ message: "groupCode is required" });
   }
 
   try {
-    const whereColumn = await getGroupWhereColumn();
     const groupSelectSql = await buildGroupSelectSql();
+    const whereConfig = await buildGroupWhereSql();
 
-    if (!whereColumn) {
+    if (!whereConfig) {
       return res.status(500).json({
         message: "Neither groupCode nor groupID column exists on beneficiaries",
       });
@@ -195,6 +215,7 @@ router.get("/beneficiaries/group/:groupCode", async (req, res) => {
         sex,
         dob,
         nat_id,
+        hh_size,
         hh_code,
         regionID,
         districtID,
@@ -204,11 +225,11 @@ router.get("/beneficiaries/group/:groupCode", async (req, res) => {
         ${groupSelectSql}
         selected
       FROM tblsctretargeting_beneficiaries
-      WHERE \`${whereColumn}\` = ?
+      WHERE ${whereConfig.whereSql}
       ORDER BY hh_head_name
     `;
 
-    const [rows] = await db.query(sql, [groupCode]);
+    const [rows] = await db.query(sql, whereConfig.paramsFor(String(groupCode).trim()));
     res.json(rows);
   } catch (error) {
     console.error("Group beneficiaries error:", error);

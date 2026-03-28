@@ -1004,6 +1004,126 @@ router.post("/role-extensions", async (req, res) => {
   }
 });
 
+router.get("/user-locations", async (req, res) => {
+  try {
+    const columns = await getTableColumns("tblsctretargeting_user_location");
+    const regionField = columns.includes("regionID")
+      ? "regionID"
+      : columns.includes("RegionID")
+        ? "RegionID"
+        : null;
+    const districtField = columns.includes("districtID")
+      ? "districtID"
+      : columns.includes("DistrictID")
+        ? "DistrictID"
+        : null;
+    const taField = columns.includes("taID")
+      ? "taID"
+      : columns.includes("TAID")
+        ? "TAID"
+        : null;
+
+    const where = [];
+    const params = [];
+
+    if (req.query.userID) {
+      where.push("ul.userID = ?");
+      params.push(req.query.userID);
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const regionExpr = regionField ? `ul.\`${regionField}\`` : "NULL";
+    const districtExpr = districtField ? `ul.\`${districtField}\`` : "NULL";
+    const taExpr = taField ? `ul.\`${taField}\`` : "NULL";
+
+    const [rows] = await db.query(
+      `
+      SELECT
+        ul.*,
+        COALESCE(${districtExpr}, t.DistrictID) AS resolvedDistrictID,
+        COALESCE(${regionExpr}, d.regionID) AS resolvedRegionID,
+        t.TAName AS taName,
+        d.DistrictName AS districtName,
+        r.name AS regionName
+      FROM tblsctretargeting_user_location ul
+      LEFT JOIN tblta t ON t.TAID = ${taExpr}
+      LEFT JOIN tbldistrict d ON d.DistrictID = COALESCE(${districtExpr}, t.DistrictID)
+      LEFT JOIN tblregion r ON r.regionID = COALESCE(${regionExpr}, d.regionID)
+      ${whereSql}
+      ORDER BY ul.userID DESC
+      `,
+      params,
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error("Get user locations error:", error);
+    res.status(500).json({ message: "Failed to load user locations" });
+  }
+});
+
+router.post("/user-locations", async (req, res) => {
+  const payload = req.body || {};
+  const { userID } = payload;
+
+  if (!userID) {
+    return res.status(400).json({ message: "userID is required" });
+  }
+
+  try {
+    const columns = await getTableColumns("tblsctretargeting_user_location");
+    const supportedFields = ["userID", "regionID", "districtID", "taID", "villageClusterID"];
+    const providedFields = supportedFields.filter(
+      (field) => payload[field] !== undefined && columns.includes(field),
+    );
+
+    if (providedFields.length === 0 || !providedFields.includes("userID")) {
+      return res.status(400).json({ message: "No valid location fields provided" });
+    }
+
+    const columnsSql = providedFields.map((field) => `\`${field}\``).join(", ");
+    const placeholdersSql = providedFields.map(() => "?").join(", ");
+    const values = providedFields.map((field) => payload[field]);
+
+    const [result] = await db.query(
+      `
+      INSERT INTO tblsctretargeting_user_location (${columnsSql})
+      VALUES (${placeholdersSql})
+      `,
+      values,
+    );
+
+    res.status(201).json({
+      id: result.insertId,
+      ...Object.fromEntries(providedFields.map((field) => [field, payload[field]])),
+    });
+  } catch (error) {
+    console.error("Create user location error:", error);
+    res.status(500).json({ message: "Failed to create user location" });
+  }
+});
+
+router.delete("/user-locations/:id", async (req, res) => {
+  try {
+    const [result] = await db.query(
+      `
+      DELETE FROM tblsctretargeting_user_location
+      WHERE id = ?
+      `,
+      [req.params.id],
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "User location not found" });
+    }
+
+    res.json({ message: "User location removed" });
+  } catch (error) {
+    console.error("Delete user location error:", error);
+    res.status(500).json({ message: "Failed to delete user location" });
+  }
+});
+
 router.delete("/role-extensions/:id", async (req, res) => {
   try {
     const [result] = await db.query(
