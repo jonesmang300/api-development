@@ -292,43 +292,68 @@ router.get("/beneficiaries/:sppCode", async (req, res) => {
 router.patch("/beneficiaries/:sppCode", async (req, res) => {
   try {
     const { sppCode } = req.params;
-    const {
-      sex,
-      dob,
-      nat_id,
-      hh_size,
-      hh_code,
-      groupname,
-      groupCode,
-      groupID,
-      selected,
-    } = req.body;
-    const groupValue = groupCode ?? groupID ?? null;
+    const body = req.body || {};
+    const hasOwn = (key) => Object.prototype.hasOwnProperty.call(body, key);
+    const groupValue = hasOwn("groupCode")
+      ? body.groupCode
+      : hasOwn("groupID")
+        ? body.groupID
+        : undefined;
     const { hasGroupCode, hasGroupID } = await getBeneficiaryGroupColumns();
 
-    const setParts = [
-      "sex = COALESCE(?, sex)",
-      "dob = COALESCE(?, dob)",
-      "nat_id = COALESCE(?, nat_id)",
-      "hh_size = COALESCE(?, hh_size)",
-      "hh_code = COALESCE(?, hh_code)",
-      "groupname = COALESCE(?, groupname)",
-    ];
-    const values = [sex, dob, nat_id, hh_size, hh_code, groupname];
+    const setParts = [];
+    const values = [];
 
-    if (hasGroupCode) {
-      setParts.push("groupCode = COALESCE(?, groupCode)");
+    if (hasOwn("sex")) {
+      setParts.push("sex = ?");
+      values.push(body.sex);
+    }
+
+    if (hasOwn("dob")) {
+      setParts.push("dob = ?");
+      values.push(body.dob);
+    }
+
+    if (hasOwn("nat_id")) {
+      setParts.push("nat_id = ?");
+      values.push(body.nat_id);
+    }
+
+    if (hasOwn("hh_size")) {
+      setParts.push("hh_size = ?");
+      values.push(body.hh_size);
+    }
+
+    if (hasOwn("hh_code")) {
+      setParts.push("hh_code = ?");
+      values.push(body.hh_code);
+    }
+
+    if (hasOwn("groupname")) {
+      setParts.push("groupname = ?");
+      values.push(body.groupname);
+    }
+
+    if (hasGroupCode && groupValue !== undefined) {
+      setParts.push("groupCode = ?");
       values.push(groupValue);
     }
 
-    if (hasGroupID) {
-      setParts.push("groupID = COALESCE(?, groupID)");
+    if (hasGroupID && groupValue !== undefined) {
+      setParts.push("groupID = ?");
       values.push(groupValue);
     }
 
-    setParts.push("selected = COALESCE(?, selected)");
+    if (hasOwn("selected")) {
+      setParts.push("selected = ?");
+      values.push(body.selected);
+    }
+
+    if (setParts.length === 0) {
+      return res.status(400).json({ message: "No beneficiary fields provided" });
+    }
+
     setParts.push("updated_at = NOW()");
-    values.push(selected);
     values.push(sppCode);
 
     const [result] = await db.query(
