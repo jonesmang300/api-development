@@ -215,6 +215,7 @@ router.get("/beneficiaries/group", async (req, res) => {
         sex,
         dob,
         nat_id,
+        hh_size,
         hh_code,
         regionID,
         districtID,
