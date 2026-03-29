@@ -237,11 +237,21 @@ router.get("/beneficiaries/group", async (req, res) => {
   }
 });
 
-/* ===============================
-   GET SINGLE BENEFICIARY BY sppCode
-   =============================== */
-router.get("/beneficiaries/:sppCode", async (req, res) => {
-  const { sppCode } = req.params;
+const getRequestedSppCode = (req) => {
+  const queryCode =
+    req.query && typeof req.query.sppCode === "string"
+      ? req.query.sppCode
+      : "";
+  const paramCode =
+    req.params && typeof req.params.sppCode === "string"
+      ? req.params.sppCode
+      : "";
+
+  return String(queryCode || paramCode || "").trim();
+};
+
+const handleGetBeneficiary = async (req, res) => {
+  const sppCode = getRequestedSppCode(req);
 
   if (!sppCode) {
     return res.status(400).json({ message: "sppCode is required" });
@@ -284,14 +294,27 @@ router.get("/beneficiaries/:sppCode", async (req, res) => {
     console.error("Get beneficiary error:", error);
     res.status(500).json({ message: "Server error" });
   }
+};
+
+/* ===============================
+   GET SINGLE BENEFICIARY BY sppCode
+   =============================== */
+router.get("/beneficiaries", async (req, res, next) => {
+  if (!getRequestedSppCode(req)) {
+    return next();
+  }
+
+  return handleGetBeneficiary(req, res);
 });
+
+router.get("/beneficiaries/:sppCode", handleGetBeneficiary);
 
 /* ===============================
    UPDATE SINGLE BENEFICIARY
    =============================== */
-router.patch("/beneficiaries/:sppCode", async (req, res) => {
+const handlePatchBeneficiary = async (req, res) => {
   try {
-    const { sppCode } = req.params;
+    const sppCode = getRequestedSppCode(req);
     const body = req.body || {};
     const hasOwn = (key) => Object.prototype.hasOwnProperty.call(body, key);
     const groupValue = hasOwn("groupCode")
@@ -380,7 +403,17 @@ router.patch("/beneficiaries/:sppCode", async (req, res) => {
 
     res.status(500).json({ message: "Internal server error" });
   }
+};
+
+router.patch("/beneficiaries", async (req, res, next) => {
+  if (!getRequestedSppCode(req)) {
+    return next();
+  }
+
+  return handlePatchBeneficiary(req, res);
 });
+
+router.patch("/beneficiaries/:sppCode", handlePatchBeneficiary);
 
 /* ===============================
    COUNT ALL VERIFIED BENEFICIARIES

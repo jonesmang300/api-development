@@ -75,17 +75,17 @@
           "request": { "method": "GET", "url": "{{apiBase}}/beneficiaries/verified/deviceId?villageClusterID={{villageClusterID}}&deviceId={{deviceId}}" }
         },
         {
-          "name": "GET /api/beneficiaries/:sppCode",
+          "name": "GET /api/beneficiaries?sppCode=:sppCode",
           "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 200 or 404', function(){ pm.expect(pm.response.code).to.be.oneOf([200,404]); });"] } }],
-          "request": { "method": "GET", "url": "{{apiBase}}/beneficiaries/{{beneficiarySppCode}}" }
+          "request": { "method": "GET", "url": "{{apiBase}}/beneficiaries?sppCode={{beneficiarySppCode}}" }
         },
         {
-          "name": "PATCH /api/beneficiaries/:sppCode",
+          "name": "PATCH /api/beneficiaries?sppCode=:sppCode",
           "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status 204/404', function(){ pm.expect(pm.response.code).to.be.oneOf([204,404]); });"] } }],
           "request": {
             "method": "PATCH",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{apiBase}}/beneficiaries/{{beneficiarySppCode}}",
+            "url": "{{apiBase}}/beneficiaries?sppCode={{beneficiarySppCode}}",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"groupname\": \"Updated Group\",\n  \"selected\": \"1\"\n}"
