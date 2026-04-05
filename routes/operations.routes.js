@@ -247,6 +247,25 @@ async function getRoleExtensionRegionIDs(userId) {
     .filter((value) => value.length > 0);
 }
 
+async function getAssignedTaIDs(userId) {
+  if (!userId) return [];
+
+  const [rows] = await db.query(
+    `
+    SELECT taID
+    FROM tblsctretargeting_user_location
+    WHERE userID = ?
+      AND taID IS NOT NULL
+    ORDER BY taID
+    `,
+    [userId],
+  );
+
+  return rows
+    .map((row) => String(row.taID || "").trim())
+    .filter((value) => value.length > 0);
+}
+
 router.get("/groups", async (req, res) => {
   try {
     const authUser = parseAuthUser(req);
@@ -260,14 +279,19 @@ router.get("/groups", async (req, res) => {
     `;
     const params = [];
 
-    // Role 5 users are restricted by groups they created.
+    // Role 5 users are restricted by their assigned TA locations.
     if (roleId === 5 && !userId) {
       return res.json([]);
     }
 
     if (roleId === 5 && userId) {
-      sql += " AND userID = ?";
-      params.push(userId);
+      const taIDs = await getAssignedTaIDs(userId);
+      if (taIDs.length === 0) {
+        return res.json([]);
+      }
+
+      sql += ` AND TAID IN (${taIDs.map(() => "?").join(", ")})`;
+      params.push(...taIDs);
     }
 
     if (roleId === 2) {

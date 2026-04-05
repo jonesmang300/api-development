@@ -1,8 +1,115 @@
 const express = require("express");
+const crypto = require("crypto");
 const router = express.Router();
 const db = require("../config/db");
 
 let beneficiaryGroupColumnsCache = null;
+
+function parseAuthUser(req) {
+  try {
+    const auth = req.headers.authorization || "";
+    const [scheme, token] = auth.split(" ");
+    if (scheme !== "Bearer" || !token) return null;
+
+    const [payloadPart, signaturePart] = token.split(".");
+    if (!payloadPart || !signaturePart) return null;
+
+    const secret = process.env.AUTH_TOKEN_SECRET || "cimis-mobile-secret";
+    const expectedSig = crypto
+      .createHmac("sha256", secret)
+      .update(payloadPart)
+      .digest("base64url");
+
+    if (expectedSig.length !== signaturePart.length) return null;
+    const ok = crypto.timingSafeEqual(
+      Buffer.from(expectedSig),
+      Buffer.from(signaturePart),
+    );
+    if (!ok) return null;
+
+    const payloadJson = Buffer.from(payloadPart, "base64url").toString("utf8");
+    return JSON.parse(payloadJson);
+  } catch {
+    return null;
+  }
+}
+
+async function getRoleExtensionRegionIDs(userId) {
+  if (!userId) return [];
+
+  const [rows] = await db.query(
+    `
+    SELECT regionID
+    FROM tblsctretargeting_role_extension
+    WHERE userID = ?
+      AND regionID IS NOT NULL
+    ORDER BY regionID
+    `,
+    [userId],
+  );
+
+  return rows
+    .map((row) => String(row.regionID || "").trim())
+    .filter((value) => value.length > 0);
+}
+
+async function getAssignedTaIDs(userId) {
+  if (!userId) return [];
+
+  const [rows] = await db.query(
+    `
+    SELECT taID
+    FROM tblsctretargeting_user_location
+    WHERE userID = ?
+      AND taID IS NOT NULL
+    ORDER BY taID
+    `,
+    [userId],
+  );
+
+  return rows
+    .map((row) => String(row.taID || "").trim())
+    .filter((value) => value.length > 0);
+}
+
+async function getBeneficiaryVisibilityFilter(req, alias = "") {
+  const authUser = parseAuthUser(req);
+  const roleId = Number(authUser?.userRole || 0);
+  const userId = authUser?.id ? String(authUser.id) : "";
+  const prefix = alias ? `${alias}.` : "";
+
+  if (roleId === 1) {
+    return { sql: "", params: [], deny: false };
+  }
+
+  if (roleId === 2) {
+    const regionIDs = await getRoleExtensionRegionIDs(userId);
+    if (regionIDs.length === 0) {
+      return { sql: "", params: [], deny: true };
+    }
+
+    return {
+      sql: ` AND ${prefix}regionID IN (${regionIDs.map(() => "?").join(", ")})`,
+      params: regionIDs,
+      deny: false,
+    };
+  }
+
+  if (roleId === 5) {
+    const taIDs = await getAssignedTaIDs(userId);
+    if (taIDs.length === 0) {
+      return { sql: "", params: [], deny: true };
+    }
+
+    return {
+      sql: ` AND ${prefix}taID IN (${taIDs.map(() => "?").join(", ")})`,
+      params: taIDs,
+      deny: false,
+    };
+  }
+
+  return { sql: "", params: [], deny: false };
+}
 
 const getBeneficiaryGroupColumns = async () => {
   if (beneficiaryGroupColumnsCache) {
@@ -77,6 +184,11 @@ router.get("/beneficiaries/filter", async (req, res) => {
   }
 
   try {
+    const visibility = await getBeneficiaryVisibilityFilter(req);
+    if (visibility.deny) {
+      return res.json([]);
+    }
+
     const groupSelectSql = await buildGroupSelectSql();
 
     let sql = `
@@ -100,7 +212,8 @@ router.get("/beneficiaries/filter", async (req, res) => {
       FROM tblsctretargeting_beneficiaries
       WHERE villageClusterID = ?
     `;
-    const params = [villageClusterID];
+    const params = [villageClusterID, ...visibility.params];
+    sql += visibility.sql;
 
     /* Incremental sync support */
     if (lastSync) {
@@ -130,6 +243,11 @@ router.get("/beneficiaries/verified", async (req, res) => {
   }
 
   try {
+    const visibility = await getBeneficiaryVisibilityFilter(req);
+    if (visibility.deny) {
+      return res.json([]);
+    }
+
     const sql = `
       SELECT
         sppCode,
@@ -139,10 +257,11 @@ router.get("/beneficiaries/verified", async (req, res) => {
         villageClusterID
       FROM tblsctretargeting_beneficiaries
       WHERE selected = '1' AND villageClusterID = ?
+      ${visibility.sql}
       ORDER BY groupname, hh_head_name
     `;
 
-    const [rows] = await db.query(sql, [villageClusterID]);
+    const [rows] = await db.query(sql, [villageClusterID, ...visibility.params]);
     res.json(rows);
   } catch (error) {
     console.error("Verified list error:", error);
@@ -166,6 +285,11 @@ router.get("/beneficiaries/verified/deviceId", async (req, res) => {
   }
 
   try {
+    const visibility = await getBeneficiaryVisibilityFilter(req);
+    if (visibility.deny) {
+      return res.json([]);
+    }
+
     const sql = `
       SELECT
         sppCode,
@@ -177,10 +301,15 @@ router.get("/beneficiaries/verified/deviceId", async (req, res) => {
       WHERE selected = '1'
         AND villageClusterID = ?
         AND deviceId = ?
+        ${visibility.sql}
       ORDER BY groupname, hh_head_name
     `;
 
-    const [rows] = await db.query(sql, [villageClusterID, deviceId]);
+    const [rows] = await db.query(sql, [
+      villageClusterID,
+      deviceId,
+      ...visibility.params,
+    ]);
     res.json(rows);
   } catch (error) {
     console.error("Verified list error:", error);
@@ -199,6 +328,11 @@ router.get("/beneficiaries/group", async (req, res) => {
   }
 
   try {
+    const visibility = await getBeneficiaryVisibilityFilter(req);
+    if (visibility.deny) {
+      return res.json([]);
+    }
+
     const groupSelectSql = await buildGroupSelectSql();
     const whereConfig = await buildGroupWhereSql();
 
@@ -226,10 +360,14 @@ router.get("/beneficiaries/group", async (req, res) => {
         selected
       FROM tblsctretargeting_beneficiaries
       WHERE ${whereConfig.whereSql}
+      ${visibility.sql}
       ORDER BY hh_head_name
     `;
 
-    const [rows] = await db.query(sql, whereConfig.paramsFor(String(groupCode).trim()));
+    const [rows] = await db.query(sql, [
+      ...whereConfig.paramsFor(String(groupCode).trim()),
+      ...visibility.params,
+    ]);
     res.json(rows);
   } catch (error) {
     console.error("Group beneficiaries error:", error);
@@ -258,6 +396,11 @@ const handleGetBeneficiary = async (req, res) => {
   }
 
   try {
+    const visibility = await getBeneficiaryVisibilityFilter(req);
+    if (visibility.deny) {
+      return res.status(404).json({ message: "Beneficiary not found" });
+    }
+
     const groupSelectSql = await buildGroupSelectSql();
 
     const sql = `
@@ -280,10 +423,11 @@ const handleGetBeneficiary = async (req, res) => {
         updated_at
       FROM tblsctretargeting_beneficiaries
       WHERE sppCode = ?
+      ${visibility.sql}
       LIMIT 1
     `;
 
-    const [rows] = await db.query(sql, [sppCode]);
+    const [rows] = await db.query(sql, [sppCode, ...visibility.params]);
 
     if (rows.length === 0) {
       return res.status(404).json({ message: "Beneficiary not found" });
@@ -314,6 +458,11 @@ router.get("/beneficiaries/:sppCode", handleGetBeneficiary);
    =============================== */
 const handlePatchBeneficiary = async (req, res) => {
   try {
+    const visibility = await getBeneficiaryVisibilityFilter(req);
+    if (visibility.deny) {
+      return res.status(404).json({ message: "Beneficiary not found" });
+    }
+
     const sppCode = getRequestedSppCode(req);
     const body = req.body || {};
     const hasOwn = (key) => Object.prototype.hasOwnProperty.call(body, key);
@@ -377,7 +526,7 @@ const handlePatchBeneficiary = async (req, res) => {
     }
 
     setParts.push("updated_at = NOW()");
-    values.push(sppCode);
+    values.push(sppCode, ...visibility.params);
 
     const [result] = await db.query(
       `
@@ -385,6 +534,7 @@ const handlePatchBeneficiary = async (req, res) => {
       SET
         ${setParts.join(", ")}
       WHERE sppCode = ?
+      ${visibility.sql}
       `,
       values,
     );
@@ -420,13 +570,19 @@ router.patch("/beneficiaries/:sppCode", handlePatchBeneficiary);
    =============================== */
 router.get("/beneficiaries/count/selected", async (req, res) => {
   try {
+    const visibility = await getBeneficiaryVisibilityFilter(req);
+    if (visibility.deny) {
+      return res.json({ total: 0 });
+    }
+
     const sql = `
       SELECT COUNT(sppCode) AS total
       FROM tblsctretargeting_beneficiaries
       WHERE selected = '1'
+      ${visibility.sql}
     `;
 
-    const [rows] = await db.query(sql);
+    const [rows] = await db.query(sql, visibility.params);
 
     res.json({
       total: rows[0].total,
@@ -559,14 +715,20 @@ router.get(
     }
 
     try {
+      const visibility = await getBeneficiaryVisibilityFilter(req);
+      if (visibility.deny) {
+        return res.json({ total: 0 });
+      }
+
       const [rows] = await db.query(
         `
       SELECT COUNT(*) AS total
       FROM tblsctretargeting_beneficiaries
       WHERE selected = '1'
       AND deviceId = ?
+      ${visibility.sql}
       `,
-        [deviceId],
+        [deviceId, ...visibility.params],
       );
 
       res.json({ total: Number(rows?.[0]?.total || 0) });
@@ -589,6 +751,11 @@ router.get("/beneficiaries/summary/group", async (req, res) => {
   }
 
   try {
+    const visibility = await getBeneficiaryVisibilityFilter(req);
+    if (visibility.deny) {
+      return res.json([]);
+    }
+
     const sql = `
       SELECT
         groupname,
@@ -613,11 +780,12 @@ router.get("/beneficiaries/summary/group", async (req, res) => {
       WHERE villageClusterID = ?
         AND groupname IS NOT NULL
         AND TRIM(groupname) <> ''
+        ${visibility.sql}
       GROUP BY groupname
       ORDER BY groupname ASC
     `;
 
-    const [rows] = await db.query(sql, [villageClusterID]);
+    const [rows] = await db.query(sql, [villageClusterID, ...visibility.params]);
 
     res.json(rows);
   } catch (error) {
@@ -638,6 +806,11 @@ router.get("/beneficiaries/summary/verified/totals", async (req, res) => {
   }
 
   try {
+    const visibility = await getBeneficiaryVisibilityFilter(req);
+    if (visibility.deny) {
+      return res.json({ M: 0, F: 0, Total: 0 });
+    }
+
     const sql = `
       SELECT
         SUM(CASE WHEN sex IN ('01', 'M', 'm') THEN 1 ELSE 0 END) AS M,
@@ -649,9 +822,10 @@ router.get("/beneficiaries/summary/verified/totals", async (req, res) => {
       FROM tblsctretargeting_beneficiaries
       WHERE selected = '1'
         AND villageClusterID = ?
+        ${visibility.sql}
     `;
 
-    const [rows] = await db.query(sql, [villageClusterID]);
+    const [rows] = await db.query(sql, [villageClusterID, ...visibility.params]);
 
     res.json(rows[0]);
   } catch (error) {

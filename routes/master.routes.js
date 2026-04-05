@@ -51,6 +51,66 @@ async function getRoleExtensionRegionIDs(userId) {
     .filter((value) => value.length > 0);
 }
 
+async function getAssignedTaIDs(userId) {
+  if (!userId) return [];
+
+  const [rows] = await db.query(
+    `
+    SELECT taID
+    FROM tblsctretargeting_user_location
+    WHERE userID = ?
+      AND taID IS NOT NULL
+    ORDER BY taID
+    `,
+    [userId],
+  );
+
+  return rows
+    .map((row) => String(row.taID || "").trim())
+    .filter((value) => value.length > 0);
+}
+
+async function getAssignedDistrictIDs(userId) {
+  const taIDs = await getAssignedTaIDs(userId);
+  if (taIDs.length === 0) return [];
+
+  const [rows] = await db.query(
+    `
+    SELECT DISTINCT DistrictID
+    FROM tblta
+    WHERE TAID IN (${taIDs.map(() => "?").join(", ")})
+      AND DistrictID IS NOT NULL
+    ORDER BY DistrictID
+    `,
+    taIDs,
+  );
+
+  return rows
+    .map((row) => String(row.DistrictID || "").trim())
+    .filter((value) => value.length > 0);
+}
+
+async function getAssignedRegionIDsFromTas(userId) {
+  const taIDs = await getAssignedTaIDs(userId);
+  if (taIDs.length === 0) return [];
+
+  const [rows] = await db.query(
+    `
+    SELECT DISTINCT d.regionID
+    FROM tblta t
+    INNER JOIN tbldistrict d ON d.DistrictID = t.DistrictID
+    WHERE t.TAID IN (${taIDs.map(() => "?").join(", ")})
+      AND d.regionID IS NOT NULL
+    ORDER BY d.regionID
+    `,
+    taIDs,
+  );
+
+  return rows
+    .map((row) => String(row.regionID || "").trim())
+    .filter((value) => value.length > 0);
+}
+
 /* ===============================
    GET ALL REGIONS
    =============================== */
@@ -65,6 +125,14 @@ router.get("/regions", async (req, res) => {
 
     if (roleId === 2) {
       const regionIDs = await getRoleExtensionRegionIDs(userId);
+      if (regionIDs.length === 0) {
+        return res.json([]);
+      }
+
+      sql += ` WHERE regionID IN (${regionIDs.map(() => "?").join(", ")})`;
+      params.push(...regionIDs);
+    } else if (roleId === 5) {
+      const regionIDs = await getAssignedRegionIDsFromTas(userId);
       if (regionIDs.length === 0) {
         return res.json([]);
       }
@@ -106,17 +174,36 @@ router.get("/districts", async (req, res) => {
       ) {
         return res.json([]);
       }
+    } else if (roleId === 5) {
+      const regionIDs = await getAssignedRegionIDsFromTas(userId);
+      if (
+        regionIDs.length === 0 ||
+        !regionIDs.includes(String(regionID || "").trim())
+      ) {
+        return res.json([]);
+      }
     }
 
-    const [rows] = await db.query(
-      `
+    let sql = `
       SELECT DistrictID, DistrictName, regionID
       FROM tbldistrict
       WHERE regionID = ?
-      ORDER BY DistrictName
-      `,
-      [regionID],
-    );
+    `;
+    const params = [regionID];
+
+    if (roleId === 5) {
+      const districtIDs = await getAssignedDistrictIDs(userId);
+      if (districtIDs.length === 0) {
+        return res.json([]);
+      }
+
+      sql += ` AND DistrictID IN (${districtIDs.map(() => "?").join(", ")})`;
+      params.push(...districtIDs);
+    }
+
+    sql += " ORDER BY DistrictName";
+
+    const [rows] = await db.query(sql, params);
 
     res.json(rows);
   } catch (error) {
@@ -175,19 +262,7 @@ router.get("/tas", async (req, res) => {
         return res.json([]);
       }
 
-      const [assignedRows] = await db.query(
-        `
-        SELECT taID
-        FROM tblsctretargeting_user_location
-        WHERE userID = ?
-          AND taID IS NOT NULL
-        `,
-        [userId],
-      );
-
-      const taIDs = assignedRows
-        .map((r) => String(r.taID || "").trim())
-        .filter((v) => v.length > 0);
+      const taIDs = await getAssignedTaIDs(userId);
 
       if (taIDs.length === 0) {
         return res.json([]);
@@ -243,6 +318,14 @@ router.get("/village-clusters", async (req, res) => {
 
       const taRegionID = String(taRows?.[0]?.regionID || "").trim();
       if (!taRegionID || !regionIDs.includes(taRegionID)) {
+        return res.json([]);
+      }
+    } else if (roleId === 5) {
+      const taIDs = await getAssignedTaIDs(userId);
+      if (
+        taIDs.length === 0 ||
+        !taIDs.includes(String(taID || "").trim())
+      ) {
         return res.json([]);
       }
     }
